@@ -108,6 +108,7 @@ class PhysEnvironment(object):
                 spring.update(dt)
 
             for node in self.nodes:
+                #node.accel = node.gravity
                 node.update(dt)
 
             for obj in self.objects:

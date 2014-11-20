@@ -10,6 +10,7 @@ class PhysObject(object):
             velocity = Vector(*velocity)
 
         self.position = Vector(x, y)
+        self.oldPosition = None
 
         self.environment = environment
 
@@ -18,9 +19,7 @@ class PhysObject(object):
         self.mass = mass
         self.velocity = velocity
         self.force = self.gravity * self.mass
-        if(self.mass != 0):
-            self.accel = self.force/self.mass
-
+        self.accel = Vector(0, 0)
         self.isFixed = isFixed
 
         #default to lowest drawing and updating priority
@@ -46,39 +45,22 @@ class PhysObject(object):
 
     def update(self, dt):
         if(self.isFixed or self.mass == 0):
-            self.force = Vector(0, 0)
+            self.accel = Vector(0, 0)
         else:
-            '''
-            state = PhysState(self.position, self.velocity)
-            a = self.evaluate(state, 0, 
-                              PhysDerivatives(Vector(0, 0), Vector(0, 0)))
-            b = self.evaluate(state, dt * 0.5, a)
-            c = self.evaluate(state, dt * 0.5, b)
-            d = self.evaluate(state, dt, c)
+            #self.force = self.gravity * self.mass
+            #self.accel = self.force / self.mass
 
-            dxdt = (a.dx + 2*b.dx + 2*c.dx + d.dx) / 6.0
-            dvdt = (a.dv + 2*b.dv + 2*c.dv + d.dv) / 6.0
+            if(self.oldPosition == None):
+                newPosition = (self.position + self.velocity * dt + 
+                            0.5 * self.accel * dt**2)
+            else:
+                newPosition = (2 * self.position - self.oldPosition + 
+                               self.accel * dt**2)
 
-            self.position += dxdt * dt
-            self.velocity += dvdt * dt
-
-            self.force = Vector(0, 0)
-            '''
-            #add gravity to force
-            self.force += self.gravity * self.mass
-
-            #update accel
-            self.accel = self.force / self.mass
-
-            #update velocity
-            self.velocity += self.accel * dt
-
-            #update position
-            #d = v*t + .5*a*t**2
-            self.position += self.velocity * dt# + 0.5*self.accel * dt**2
-
+            self.oldPosition = self.position
+            self.position = newPosition
             #reset force for the next loop through
-            self.force = Vector(0, 0)
+            #self.accel = Vector(0, 0)
             
     def draw(self, canvas):
         r = 10
@@ -100,7 +82,7 @@ class PhysObject(object):
 
     #where any special instructions for starting the simulation should go
     def initForSim(self):
-        pass
+        self.accel = self.gravity
 
     def __str__(self):
         (x, y) = self.position.getXY()

@@ -32,9 +32,9 @@ class BridgeDemo(EventBasedAnimationClass):
         #constants for noees/springs
         self.nodeMass = 10 #kg
         self.massIncrement = 10 #how much the mass increases on a click
-        self.springK = 2000
+        self.springK = 2000 
         self.springDampRatio = 1
-        self.springBreakRatio = 0.25
+        self.springBreakRatio = 0.1
 
         self.initEnviron()
 
@@ -67,7 +67,7 @@ class BridgeDemo(EventBasedAnimationClass):
 
         if(selection != None and isinstance(selection, Node)):
             if(self.environ.isSimulating):
-                selection.mass += self.massIncrement
+                selection.accel += Vector(0, -self.massIncrement*10)
             else:
                 #make new node that will follow the mouse and not be fixed
                 (x, y) = self.environ.getVect(event.x, event.y).getXY()

@@ -28,7 +28,7 @@ class Node(PhysObject):
 
         canvas.create_oval(x-self.r, y-self.r, x+self.r, y+self.r, 
                            fill=self.color)
-        canvas.create_text(x, y, text=str(len(self.springs)), 
+        canvas.create_text(x, y, text=str(self.mass), 
                            fill=self.textColor)
 
     def addSpring(self, spring):
@@ -172,36 +172,21 @@ class Spring(PhysObject):
 
     #update spring properties: displacement, curLength, unitVector, force
     def updateInfo(self, dt):
-        self.nodeVect = self.node1.position - self.node2.position
+        self.nodeVect = self.node2.position - self.node1.position
         self.curLength = (self.nodeVect).getMag()
 
         self.oldDisplacement = self.displacement
         self.displacement = self.curLength - self.startLength
-
-        if(abs(self.displacement) > self.maxDisplacement):
-            self.broken = True
+        if(self.displacement/self.startLength > self.breakRatio):
             self.breakSpring()
         else:
-            self.broken = False
+            diff = (self.displacement)/self.curLength
 
-        #always points from node2 to node1
-        if(self.curLength == 0): self.unitVector = Vector(0, 0)
-        else:
-            self.unitVector = (self.nodeVect)/self.curLength
-
-        #Hooke's law. muliply unitvector so force is a vector in the right dir
-        self.force = -1*self.k*self.displacement*self.unitVector
-
-        #factor in spring damping
-        massVelocity = self.node1.velocity + self.node2.velocity * -1
-        #velocity of the spring length changing
-        if(dt == 0): self.lenVelocity = 0
-        else:
-            self.lenVelocity = (self.displacement - self.oldDisplacement) / dt 
-
-        self.dampForce = -self.dampConst * self.lenVelocity * self.unitVector
-        self.force += self.dampForce
-
+            if(not self.node1.isFixed):
+                self.node1.position += self.nodeVect*0.5*diff
+            if(not self.node2.isFixed):
+                self.node2.position -= self.nodeVect*0.5*diff
+        
         self.updateColor()
 
     #overrides update method of super class
@@ -212,8 +197,8 @@ class Spring(PhysObject):
         #add force to each node
         #since unitVector points toward node1, the force on node2 needs to have
         #it's sign flipped.
-        self.node1.force += self.force
-        self.node2.force -= self.force
+        #self.node1.force += self.force
+        #self.node2.force -= self.force
 
     def draw(self, canvas):
         #node1 coordinates

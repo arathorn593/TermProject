@@ -96,10 +96,10 @@ class OneDimSpringDemo(OneDimDemo):
         super(OneDimSpringDemo, self).initAnimation()
 
         self.springLen = 200
-        self.springK = 20000
+        self.springK = 200
         self.mass = 10
         startStetch = 50
-        self.dampRatio = 1.3
+        self.dampRatio = 0
         self.springDamp = (self.dampRatio * 2 * 
                            math.sqrt(self.mass * self.springK))
 
