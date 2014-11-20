@@ -30,10 +30,10 @@ class SpringDemo(EventBasedAnimationClass):
         self.node3 = Node(3.5, 2.5, self.nodeMass, True, self.environment)
 
         self.spring1 = Spring(self.node1, self.node2, self.springK,
-                             self.springDampRatio, self.environment)
+                             self.springDampRatio, 1, self.environment)
 
         self.spring2 = Spring(self.node2, self.node3, self.springK,
-                              self.springDampRatio, self.environment)
+                              self.springDampRatio, 1, self.environment)
 
         self.environment.start()
 

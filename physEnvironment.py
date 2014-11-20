@@ -1,7 +1,10 @@
 from vector import Vector
-from eventBasedAnimationClass import EventBasedAnimationClass
+from vector import PhysState
+from vector import PhysDerivatives
 
 class PhysEnvironment(object):
+
+
     #sets up the environment
     #gravity = gravity in m/s**2
     #screenConversion = pixels/meter
@@ -17,13 +20,20 @@ class PhysEnvironment(object):
         #has the simulation been started once
         self.hasStarted = False 
 
-        self.drawQue = []
-        self.updateQue = []
+        self.springs = []
+        self.nodes = []
+        self.objects = []
 
     def start(self):
         if(not self.hasStarted):
             #init all objects for starting the animation
-            for obj in self.updateQue:
+            for spring in self.springs:
+                spring.initForSim()
+
+            for node in self.nodes:
+                node.initForSim()
+
+            for obj in self.objects:
                 obj.initForSim()
 
         self.isSimulating = True
@@ -62,46 +72,66 @@ class PhysEnvironment(object):
 
     #add the given object to the environments list
     def addObj(self, obj):
-        self.drawQue.append(obj)
-        self.updateQue.append(obj)
-
-        #sort both ques (reverse so high numbers come first in updateque)
-        self.updateQue.sort(lambda x, y:cmp(x.updatePriority,y.updatePriority),
-                            reverse=True)
-        self.drawQue.sort(lambda x, y: cmp(x.drawPriority, y.drawPriority))
+        from spring import Spring
+        from spring import Node
+        from physObject import PhysObject
+        if(isinstance(obj, Spring)):
+            self.springs.append(obj)
+            return len(self.springs) - 1
+        elif(isinstance(obj, Node)):
+            self.nodes.append(obj)
+            return len(self.nodes) - 1
+        elif(isinstance(obj, PhysObject)):
+            self.objects.append(obj)
+            return len(self.objects) - 1
+        else:
+            raise Exception("not a physObject")
 
     def deleteObj(self, deleteObj):
-        for i in xrange(len(self.updateQue)):
-            if(self.updateQue[i] is deleteObj):
-                del self.updateQue[i]
-                break
-
-        #remove from drawQue as well
-        for i in xrange(len(self.drawQue)):
-            if(self.drawQue[i] is deleteObj):
-                del self.drawQue[i]
-                break
-
-
+        from spring import Spring
+        from spring import Node
+        from physObject import PhysObject
+        if(isinstance(deleteObj, Spring)):
+            del self.springs[deleteObj.index]
+        elif(isinstance(deleteObj, Node)):
+            del self.nodes[deleteObj.index]
+        elif(isinstance(deleteObj, PhysObject)):
+            del self.objects[deleteObj.index]
+        else:
+            raise Exception("not a physObject")
 
     #update each object in the list, assume each is a physObject
     def update(self, dt):
+        #the nodes will ask the springs for force info so only update nodes
         if(self.isSimulating):
-            for obj in self.updateQue:
+            for spring in self.springs:
+                spring.update(dt)
+
+            for node in self.nodes:
+                node.update(dt)
+
+            for obj in self.objects:
                 obj.update(dt)
+        
 
     #draw all the objects in the simulation
     def draw(self, canvas):
         #draw objects so springs are in front but behind nodes
-        for obj in self.drawQue:
+        for spring in self.springs:
+            spring.draw(canvas)
+
+        for node in self.nodes:
+            node.draw(canvas)
+
+        for obj in self.objects:
             obj.draw(canvas)
 
     #returns the object at the given screen coords or none
     def getClickedObj(self, screenX, screenY):
         #look at draw que because that will get the top object
-        for obj in self.drawQue:
-            if(obj.isClicked(screenX, screenY)):
-                return obj
+        for node in self.nodes:
+            if(node.isClicked(screenX, screenY)):
+                return node
 
 def testPhysEnvironment():
     grav = 10

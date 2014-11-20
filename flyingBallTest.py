@@ -21,7 +21,7 @@ class FlyingBall(EventBasedAnimationClass):
 
         self.ball = PhysObject(0, 0, self.ballMass, False, self.environment)
 
-        self.environment.addObject(self.ball)
+        self.environment.addObj(self.ball)
 
         self.root.bind("<B1-ButtonRelease>", 
                        lambda event: self.onMouseReleasedWrapper(event))
@@ -42,7 +42,7 @@ class FlyingBall(EventBasedAnimationClass):
         velocityVect *= scale
 
         self.ball.velocity = velocityVect
-        self.environment.isSimulating = True
+        self.environment.start()
 
     def onKeyPressed(self, event):
         if(event.keysym == "r"):

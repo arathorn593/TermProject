@@ -46,6 +46,8 @@ class Node(PhysObject):
         xDist = clickX - x
         yDist = clickY - y
         return (xDist**2 + yDist**2) < self.r**2
+
+
 '''
     def update(self, dt):
         if(not self.isFixed):

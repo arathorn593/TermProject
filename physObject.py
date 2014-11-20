@@ -20,8 +20,6 @@ class PhysObject(object):
         self.force = self.gravity * self.mass
         if(self.mass != 0):
             self.accel = self.force/self.mass
-        else:
-            self.accel = Vector(0, 0)
 
         self.isFixed = isFixed
 
@@ -66,22 +64,22 @@ class PhysObject(object):
 
             self.force = Vector(0, 0)
             '''
-            self.position += self.velocity * dt + 0.5 * self.accel * dt**2
-
             #add gravity to force
             self.force += self.gravity * self.mass
-
-            oldAccel = self.accel
 
             #update accel
             self.accel = self.force / self.mass
 
             #update velocity
-            self.velocity += 0.5*(self.accel + oldAccel) * dt 
+            self.velocity += self.accel * dt
+
+            #update position
+            #d = v*t + .5*a*t**2
+            self.position += self.velocity * dt# + 0.5*self.accel * dt**2
 
             #reset force for the next loop through
             self.force = Vector(0, 0)
-
+            
     def draw(self, canvas):
         r = 10
         (x, y) = self.environment.getScreenXY(self.position)

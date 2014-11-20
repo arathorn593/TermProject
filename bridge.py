@@ -1,6 +1,6 @@
 from physEnvironment import PhysEnvironment
 from physObject import PhysObject
-from vector import Vector
+from vector import *
 
 class Joint(object):
     def __init__(self, position, mass, environment):
@@ -9,8 +9,24 @@ class Joint(object):
         self.acceleration = 0
         self.mass = mass
         self.environment = environment
+        #list of joints
+        self.connections = []
+        self.k = 2000
+        self.index = self.environment.addObj(self)
 
-    def getDerivatives
+    def getNewState(self, dt, derivatives):
+        (dx, dv) = (derivatives.dx, derivatives.dv)
+        newPos = self.pos + dx * dt
+        newVel = self.velocity + dv * dt
+
+        return physState(newPos, newVel)
+
+    def getDerivatives(self, dt, states):
+        dx = states[self.index].velocity
+
+        force = 0
+        for joint in self.connections:
+            
 
 class Beam(physObject):
 

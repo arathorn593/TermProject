@@ -20,6 +20,7 @@ class BridgeDemo(EventBasedAnimationClass):
         self.environ = PhysEnvironment(self.gravity, self.screenConversion,
                                            0, self.height)
 
+
     def placeStartNodes(self):
         nodePoints = [(2, 2), (2, 5), (12, 2), (12, 5)]
 
@@ -36,6 +37,7 @@ class BridgeDemo(EventBasedAnimationClass):
         self.springBreakRatio = 0.25
 
         self.initEnviron()
+
         self.placeStartNodes()
 
         self.timerDelay = int(self.dt * 1000) #convert to ms
