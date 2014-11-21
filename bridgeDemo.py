@@ -1,9 +1,5 @@
 from eventBasedAnimationClass import EventBasedAnimationClass
-from physEnvironment import PhysEnvironment
-from spring import Spring
-from spring import Node
-from vector import Vector
-from physObject import PhysObject
+from physics import *
 from Tkinter import *
 import time
 
@@ -26,7 +22,7 @@ class BridgeDemo(EventBasedAnimationClass):
 
         for point in nodePoints:
             (x, y) = point
-            node = Node(x, y, self.nodeMass, True, self.environ)
+            node = Node(Vector(x, y), self.nodeMass, self.environ, True)
 
     def initAnimation(self):
         #constants for noees/springs

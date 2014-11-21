@@ -1,5 +1,8 @@
 import math
 
+def rgbString(red, green, blue):
+        return "#%02x%02x%02x" % (red, green, blue)
+
 class Vector(object):
     @staticmethod
     def almostEqual(d1, d2, epsilon=10**-10):
@@ -145,38 +148,38 @@ class PhysEnvironment(object):
 
     #add the given object to the environments list
     def add(self, obj):
-        if(isinstance(obj, constraint)):
+        if(isinstance(obj, Constraint)):
             self.constraints.append(obj)
             return len(self.constraints) - 1
-        elif(isinstance(obj, physObject)):
+        elif(isinstance(obj, PhysObject)):
             self.objects.append(obj)
             return len(self.objects) - 1
         else:
             raise Exception("cannot add this thing to the environment")
 
     def deleteObj(self, obj, objIndex):
-        if(isinstance(obj, constraint)):
-            #remove from the list by shifting everything else down
-            for i in xrange(constraintIndex, len(self.constraints) - 1):
-                self.constraints[i] = self.constraints[i+1]
-                #update the constraint's index
-                self.constraints[i].environIndex = i
+        if(isinstance(obj, Constraint)):
+            objList = self.constraints
+        elif(isinstance(obj, PhysObject)):
+            objList = self.objects
+        else:
+            raise Exception("cannot delete this thing from the environment")
 
-            #get rid of the tail element (that is a duplicate)
-            del self.constraints[-1]
-        elif(isinstance(obj, physObject)):
-            
+        #remove from the list by shifting everything else down
+        for i in xrange(objIndex, len(objList) - 1):
+            objList[i] = objList[i+1]
+            #update the constraint's index
+            objList[i].environIndex = i
+
+        #get rid of the tail element (that is a duplicate)
+        del objList[-1]
 
     #update each object in the list, assume each is a physObject
     def update(self, dt):
-        #the nodes will ask the springs for force info so only update nodes
         if(self.isSimulating):
-            for spring in self.springs:
-                spring.update(dt)
-
-            for node in self.nodes:
-                #node.accel = node.gravity
-                node.update(dt)
+            #resolve constraints then integrate objects motion
+            for constraint in self.constraints:
+                constraint.resolve()
 
             for obj in self.objects:
                 obj.update(dt)
@@ -185,21 +188,22 @@ class PhysEnvironment(object):
     #draw all the objects in the simulation
     def draw(self, canvas):
         #draw objects so springs are in front but behind nodes
-        for spring in self.springs:
-            spring.draw(canvas)
-
-        for node in self.nodes:
-            node.draw(canvas)
+        for constraint in self.constraints:
+            constraint.draw(canvas)
 
         for obj in self.objects:
             obj.draw(canvas)
 
     #returns the object at the given screen coords or none
     def getClickedObj(self, screenX, screenY):
-        #look at draw que because that will get the top object
-        for node in self.nodes:
-            if(node.isClicked(screenX, screenY)):
-                return node
+        #look at objects first, then constraints
+        for obj in self.objects:
+            if(obj.isClicked(screenX, screenY)):
+                return obj
+
+        for constraint in self.constraints:
+            if(constraint.isClicked(screenX, screenY)):
+                return constraint
 
 
 
@@ -211,7 +215,7 @@ class PhysObject(object):
     def __init__(self, position, mass, environment):
         self.environ = environment
         #add the new object to the environment and get the index of the object
-        self.index = self.environ.add(self)
+        self.environIndex = self.environ.add(self)
 
         self.position = position
         self.oldPosition = None #will be needed in update func
@@ -252,7 +256,7 @@ class PhysObject(object):
 
     #delete the object from the environment
     def delete(self):
-        self.environ.deleteObj(self, self.index)
+        self.environ.deleteObj(self, self.environIndex)
 
     #draw the object
     def draw(self, canvas):
@@ -283,6 +287,10 @@ class Node(PhysObject):
         #drawing constants
         self.r = 10
         self.color = "black"
+
+    def update(self, dt):
+        if(not self.isFixed):
+            super(Node, self).update(dt)
 
     #create a constraint between this node and another node
     def addConstraint(self, constraint, nodeIndex):
@@ -317,6 +325,27 @@ class Node(PhysObject):
 
         canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
 
+    def isClicked(self, clickX, clickY):
+        (x, y) = self.environ.getScreenXY(self.position)
+
+        xDist = clickX - x
+        yDist = clickY - y
+        return (xDist**2 + yDist**2) <= self.r**2
+
+#weights that will drop onto the bridge
+class Weight(PhysObject):
+    def __init__(self, *args):
+        self.r = 20
+        self.color = "orange"
+        
+        super(Weight, self).__init__(*args)
+
+    def draw(self, canvas):
+        r = self.r
+        (cx, cy) = self.environ.getScreenXY(self.position)
+
+        canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill=self.color) 
+
 #does not extend phys object class because it does not act like a physObject
 class Constraint(object):
     #node1, node2 are the nodes that the constraint is attached to
@@ -329,8 +358,9 @@ class Constraint(object):
         self.nodes = [node1, node2]
 
         self.nodeIndexes=[self.nodes[i].addConstraint(self, i) 
-                          for i in len(self.nodes)]
+                          for i in xrange(len(self.nodes))]
 
+        self.breakRatio = breakRatio
         self.restLen = (self.nodes[0].position-self.nodes[1].position).getMag()
 
         self.updateInfo()
@@ -387,7 +417,7 @@ class Constraint(object):
         #on that node or if the node is fixed
         for i in xrange(len(self.nodes)):
             node = self.nodes[i]
-            if(len(node.nodes) > 1 or node.isFixed):
+            if(len(node.constraints) > 1 or node.isFixed):
                 #remove the constraint from the node
                 node.removeConstraint(self.nodeIndexes[i], i)
 
@@ -405,10 +435,10 @@ class Constraint(object):
             self.breakConstraint()
         else:
             #shift the nodes to fix the constraints
-            if(not self.node1.isFixed):
-                self.node1.position += self.nodeVect*0.5*self.lenRatio
-            if(not self.node2.isFixed):
-                self.node2.position -= self.nodeVect*0.5*self.lenRatio
+            if(not self.nodes[0].isFixed):
+                self.nodes[0].position += self.nodeVect*0.5*self.lenRatio
+            if(not self.nodes[1].isFixed):
+                self.nodes[1].position -= self.nodeVect*0.5*self.lenRatio
 
     def delete(self):
         #remove constraint from nodes
@@ -420,7 +450,10 @@ class Constraint(object):
 
     def draw(self, canvas):
         #node coordinates
-        (x1, y1) = self.environment.getScreenXY(self.node1.position)
-        (x2, y2) = self.environment.getScreenXY(self.node2.position)
+        (x1, y1) = self.environ.getScreenXY(self.nodes[0].position)
+        (x2, y2) = self.environ.getScreenXY(self.nodes[1].position)
         canvas.create_line(x1, y1, x2, y2, fill=self.color, width=self.width)
+
+    def isClicked(self, screenX, screenY):
+        return False
 
