@@ -7,7 +7,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def initEnviron(self):
         self.screenConversion = 50 #pixels/meter
 
-        self.gravity = 10 #m/s**2
+        self.gravity = 5 #m/s**2
 
         #create an environment with the origin in the lower left
         self.environ = PhysEnvironment(self.gravity, self.screenConversion,
@@ -29,7 +29,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         #indexes of the two nodes (in list "nodes")
         constraintIndexes = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
-                             (6, 7), (7, 8), (8, 0), (8, 1), (1, 7), (7, 2),
+                             (6, 7), (7, 8), (8, 0), (7, 1), (1, 8), (7, 2),
                              (2, 6), (6, 3), (3, 5)]
 
         constraints = []
@@ -51,7 +51,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.placeStartNodes()
 
-        self.dt = 1/60.0 #seconts (50 fps)
+        self.dt = 1/30.0 #seconts (50 fps)
         self.timerDelay = int(self.dt * 1000) #convert to ms
 
         self.startTime = time.time()
@@ -63,9 +63,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         if(self.environ.isSimulating):
             pos = self.environ.getVect(event.x, event.y)
-            Weight(pos, self.nodeMass, self.environ)
+
+            Weight(pos, self.nodeMass*10, self.environ)
             
-            self.selectedNodeForce += Vector(0, -self.forceIncrement)
+            #self.selectedNodeForce += Vector(0, -self.forceIncrement*2)
 
     def onKeyPressed(self, event):
         if(event.keysym == "r"):
@@ -75,24 +76,24 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def onTimerFiredWrapper(self):
         if(self.timerDelay == None): return
+        oldTime = self.startTime
+        self.startTime = time.time()
+        if(self.startTime == oldTime):
+            self.fps = -1
+        else:
+            self.fps = 1/(self.startTime - oldTime) 
 
         self.onTimerFired()
         self.redrawAll()
 
         endTime = time.time()
         timeDif = endTime - self.startTime
-
-        self.timerDelay = 10#max(int(self.dt - timeDif) * 1000, 1)
+        print self.dt
+        frameRemaining = int(self.dt - timeDif * 1000)
+        print frameRemaining
+        self.timerDelay = max(frameRemaining, 1)
 
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
-
-        finalEndTime = time.time()
-        fpsTimeDif = finalEndTime - self.startTime
-
-        if(fpsTimeDif != 0):
-            self.fps = 1/fpsTimeDif
-
-        self.startTime = time.time()
 
     def onTimerFired(self):
         self.selectedNode.addForce(self.selectedNodeForce)
