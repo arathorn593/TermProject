@@ -259,6 +259,8 @@ class PhysObject(object):
         self.accel = self.force / self.mass
 
     #update the particle's position based on verlet integration
+    #found verlet at: 
+    #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
     def update(self, dt):
         #add force due to gravity
         self.addForce(self.Fg)
@@ -300,10 +302,17 @@ class PhysObject(object):
     #Fix any collisions and return true if any collisions fixed
     def fixCollisions(self, objList):
         return False
+
+    def __eq__(self, other):
+        if(isinstance(other, PhysObject)):
+            return ((self.position == other.position) and 
+                    (type(self) == type(other)))
+        else:
+            return NotImplemented
   
 #this class is for constrained particles
 class Node(PhysObject):
-    def __init__(self, position, mass, environ, isFixed):
+    def __init__(self, position, mass, environ, isFixed, visible=True):
         #list of constraints the node is connected to
         self.constraints = []
         #list of indexes of the node in the constraints' node list
@@ -317,6 +326,7 @@ class Node(PhysObject):
         #drawing constants
         self.r = 10
         self.color = "black"
+        self.visible = visible
 
     def update(self, dt):
         if(not self.isFixed):
@@ -350,17 +360,23 @@ class Node(PhysObject):
         super(Node, self).delete() 
 
     def draw(self, canvas):
-        r = self.r
-        (x, y) = self.environ.getScreenXY(self.position)
+        if(self.visible):
+            r = self.r
+            (x, y) = self.environ.getScreenXY(self.position)
 
-        canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
+            canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
 
     def isClicked(self, clickX, clickY):
-        (x, y) = self.environ.getScreenXY(self.position)
+        #only visible nodes can be clicked
+        if(self.visible):
+            (x, y) = self.environ.getScreenXY(self.position)
 
-        xDist = clickX - x
-        yDist = clickY - y
-        return (xDist**2 + yDist**2) <= self.r**2
+            xDist = clickX - x
+            yDist = clickY - y
+            return (xDist**2 + yDist**2) <= self.r**2
+        else:
+            return False
+
 
 #weights that will drop onto the bridge
 class Weight(PhysObject):
@@ -370,6 +386,8 @@ class Weight(PhysObject):
         
         super(Weight, self).__init__(*args)
 
+    #collision resolution algorithm adapted from:
+    #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
     def fixCollisions(self, objList):
         for obj in objList:
             if(isinstance(obj, Weight)):
@@ -389,7 +407,8 @@ class Weight(PhysObject):
                     return True
 
             elif(isinstance(obj, Constraint)):
-                minDist = self.environ.getEnvironScalar(self.r)
+                minDist = (self.environ.getEnvironScalar(self.r) +
+                           self.environ.getEnvironScalar(obj.width/2))
     
                 #vector from the 0th node to the wieght
                 nodeWeightVect = self.position - obj.nodes[0].position
@@ -416,13 +435,13 @@ class Weight(PhysObject):
                         displacement = dist - minDist
                         scaleFactor = displacement / dist
 
-                        self.position += perpVect*0.5*scaleFactor
-                        #obj.nodes[0].addForce(self.mass * Vector(0, -1))
-                        #obj.nodes[1].addForce(self.mass * Vector(0, -1))
+                        self.position += perpVect*.9*scaleFactor
+                        obj.nodes[0].addForce(self.mass * Vector(0, -1))
+                        obj.nodes[1].addForce(self.mass * Vector(0, -1))
                         if(not obj.nodes[0].isFixed):
-                            obj.nodes[0].position -= perpVect*0.5*scaleFactor
+                            obj.nodes[0].position -= perpVect*0.1*scaleFactor
                         if(not obj.nodes[1].isFixed):
-                            obj.nodes[1].position -= perpVect*0.5*scaleFactor
+                            obj.nodes[1].position -= perpVect*0.1*scaleFactor
                         return True
         #no collisions occured
         return False
@@ -465,6 +484,7 @@ class Constraint(object):
 
         #drawing constants
         self.width = 5
+        self.color = "green"
 
     #initialize for simulation
     def initForSim(self):
@@ -502,6 +522,7 @@ class Constraint(object):
         #vector going from node 1 to node 2
         self.nodeVect = node2Pos - node1Pos
         self.curLen = self.nodeVect.getMag()
+        if(self.curLen == 0): self.curLen = 0.01
 
         self.displacement = self.curLen - self.restLen
 
@@ -526,6 +547,8 @@ class Constraint(object):
 
                 self.nodes[i] = newNode
 
+    #based on code from this tutorial:
+    #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
     def resolve(self):
         self.updateInfo()
 
@@ -544,7 +567,7 @@ class Constraint(object):
             self.nodes[i].removeConstraint(self.nodeIndexes[i], i)
 
         #now, remove from environment
-        self.environ.delete(self.environIndex)
+        self.environ.deleteObj(self, self.environIndex)
 
     def draw(self, canvas):
         #node coordinates

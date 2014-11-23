@@ -78,22 +78,15 @@ class BridgeDemo(EventBasedAnimationClass):
 
     def onMouseReleased(self, event):
         if(self.newNode != None):
-            #delete node and then create new node if no other node
-            self.environ.deleteObj(self.newNode)
-
             selection = self.environ.getClickedObj(event.x, event.y)
             if(selection != None and isinstance(selection, Node)):
                 #if the original node was ended on then delete spring too
-                if(selection is self.startNode):
-                    self.startNode.removeSpring(self.newSpring)
-                    self.environ.deleteObj(self.newSpring)
+                #if(selection is self.startNode):
+                    #self.startNode.removeSpring(self.newSpring)
+                    #self.environ.deleteObj(self.newSpring)
 
-
-                #sanity check to make sure node2 was the selected note
-                node = self.newSpring.node2
-                assert(node is self.newNode)
-
-                self.newSpring.node2 = selection
+                tempNodeIndex = self.tempNode.constraintIndexes[0]
+                self.tempConstraint.nodes[tempNodeIndex] = selection
                 selection.addSpring(self.newSpring)
 
             else:
