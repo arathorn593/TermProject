@@ -120,7 +120,7 @@ class PhysEnvironment(object):
         self.isSimulating = True
         self.hasStarted = True
 
-    def Pause(self):
+    def pause(self):
         self.isSimulating = False
 
     #returns the environment coordinates of a screen coordinate
@@ -186,7 +186,8 @@ class PhysEnvironment(object):
         del objList[-1]
 
     #update each object in the list, assume each is a physObject
-    def update(self, dt):
+    #returns the number of objects that left the bottom of the screen
+    def update(self, dt, width, height):
         if(self.isSimulating):
             for iteration in xrange(self.resolveIterations):
                 fixedCollisions = True
@@ -199,16 +200,29 @@ class PhysEnvironment(object):
                     if(isinstance(self.objects[i], Weight)):
                         #resolve colisions with the rest of the list, the 
                         #earlier part was already resolved
-                        fixedCollisions = self.objects[i].fixCollisions(              self.objects[i+1:] + 
+                        fixedCollisions = self.objects[i].fixCollisions(
+                                          self.objects[i+1:] + 
                                           self.constraints)
 
                 #resolve constraints
                 for constraint in self.constraints:
                     constraint.resolve()
 
+            objExitingBottom = 0
             #once constraints and collisions handled, update objects
             for obj in self.objects:
-                obj.update(dt)
+                obj.update(dt, width, height)
+                if(not obj.inScreen):
+                    #check if the object exited the bottom
+                    (x, y) = self.getScreenXY(obj.position)
+
+                    if(y > height):
+                        objExitingBottom += 1
+                    #delete the object either way
+                    if(not isinstance(obj, Node)):
+                        obj.delete()
+
+            return objExitingBottom
         
 
     #draw all the objects in the simulation
@@ -253,6 +267,9 @@ class PhysObject(object):
         self.Fg = Vector(0, -self.environ.gravity) * self.mass
         self.force = Vector(0, 0) #Fg will be added on update
 
+        #by default the basic object is always in the screen
+        self.inScreen = True
+
     #add the given force to the object and update the acceleration
     def addForce(self, newForce):
         self.force += newForce
@@ -261,7 +278,7 @@ class PhysObject(object):
     #update the particle's position based on verlet integration
     #found verlet at: 
     #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
-    def update(self, dt):
+    def update(self, dt, width, height):
         #add force due to gravity
         self.addForce(self.Fg)
 
@@ -328,9 +345,9 @@ class Node(PhysObject):
         self.color = "black"
         self.visible = visible
 
-    def update(self, dt):
+    def update(self, dt, width, height):
         if(not self.isFixed):
-            super(Node, self).update(dt)
+            super(Node, self).update(dt, width, height)
 
     #create a constraint between this node and another node
     def addConstraint(self, constraint, nodeIndex):
@@ -406,7 +423,7 @@ class Weight(PhysObject):
                     obj.position -= centerVect*0.5*scaleFactor
                     return True
 
-            elif(isinstance(obj, Constraint)):
+            elif(isinstance(obj, Constraint) and obj.isCollidable):
                 minDist = (self.environ.getEnvironScalar(self.r) +
                            self.environ.getEnvironScalar(obj.width/2))
     
@@ -435,27 +452,27 @@ class Weight(PhysObject):
                         displacement = dist - minDist
                         scaleFactor = displacement / dist
 
-                        self.position += perpVect*.9*scaleFactor
-                        obj.nodes[0].addForce(self.mass * Vector(0, -1))
-                        obj.nodes[1].addForce(self.mass * Vector(0, -1))
+                        self.position += perpVect*.01*scaleFactor
+                        #obj.nodes[0].addForce(self.mass * Vector(0, -1))
+                        #obj.nodes[1].addForce(self.mass * Vector(0, -1))
                         if(not obj.nodes[0].isFixed):
-                            obj.nodes[0].position -= perpVect*0.1*scaleFactor
+                            obj.nodes[0].position -= perpVect*0.99*scaleFactor
                         if(not obj.nodes[1].isFixed):
-                            obj.nodes[1].position -= perpVect*0.1*scaleFactor
+                            obj.nodes[1].position -= perpVect*0.99*scaleFactor
                         return True
         #no collisions occured
         return False
 
-    def update(self, dt):
+    def update(self, dt, width, height):
         #first, update as usual
-        super(Weight, self).update(dt)
+        super(Weight, self).update(dt, width, height)
 
         #now make sure weight is in canvas
-        (x, y) = self.position.getXY()
-        environR = self.environ.getEnvironScalar(self.r)
-        if(y < environR): 
-            y = environR
-            self.position = Vector(x, y)
+        (x, y) = self.environ.getScreenXY(self.position)
+        r = self.r
+
+        if(y - r > height or y + r < 0 or x - r > width or x + r < 0):
+            self.inScreen = False
 
     def draw(self, canvas):
         r = self.r
@@ -468,7 +485,8 @@ class Constraint(object):
     #node1, node2 are the nodes that the constraint is attached to
     #breakRatio is the fraction of the start len the constraint will move
     #before breaking
-    def __init__(self, node1, node2, breakRatio, environ):
+    def __init__(self, node1, node2, breakRatio, environ, collidable):
+        self.isCollidable = collidable
         self.environ = environ
         self.environIndex = self.environ.add(self)
 
@@ -484,36 +502,18 @@ class Constraint(object):
 
         #drawing constants
         self.width = 5
-        self.color = "green"
+        #default is black
+        self.color = "black"
 
     #initialize for simulation
     def initForSim(self):
         #update rest length (in case nodes were shifted since creation)
         self.restLen = (self.nodes[0].position-self.nodes[1].position).getMag()
 
+    #this method is overwritten by subclasses
+    #included so the overhead of super not needed each update
     def updateColor(self):
-        #base color values
-        (red, green, blue) = (0, 255, 0)
-
-        #displaceRatio is 1 or -1 right at breaking
-        displaceRatio = self.lenRatio/self.breakRatio
-
-        if(displaceRatio > 1): 
-            displaceRatio = 1
-        elif(displaceRatio < -1):
-            displaceRatio = -1
-
-        colorChange = abs(displaceRatio) * 255
-
-        if(displaceRatio < 0):
-            blue += colorChange
-        else:
-            red += colorChange
-
-        #reduce the amount of green either way
-        green -= colorChange
-
-        self.color = rgbString(red, green, blue)
+        pass
 
     def updateInfo(self):
         node1Pos = self.nodes[0].position
@@ -570,11 +570,50 @@ class Constraint(object):
         self.environ.deleteObj(self, self.environIndex)
 
     def draw(self, canvas):
+        if(self.environ.isSimulating):
+            self.updateColor()
         #node coordinates
         (x1, y1) = self.environ.getScreenXY(self.nodes[0].position)
         (x2, y2) = self.environ.getScreenXY(self.nodes[1].position)
         canvas.create_line(x1, y1, x2, y2, fill=self.color, width=self.width)
 
     def isClicked(self, screenX, screenY):
-        return False
+        return False    
 
+class BridgeBeam(Constraint):
+    def __init__(self, *args):
+        super(BridgeBeam, self).__init__(*args, collidable=False)
+        self.color = "gray"
+    '''
+    def updateColor(self):
+        #base color values
+        (red, green, blue) = (0, 255, 0)
+
+        #displaceRatio is 1 or -1 right at breaking
+        displaceRatio = self.lenRatio/self.breakRatio
+
+        if(displaceRatio > 1): 
+            displaceRatio = 1
+        elif(displaceRatio < -1):
+            displaceRatio = -1
+
+        colorChange = abs(displaceRatio) * 255
+
+        if(displaceRatio < 0):
+            blue += colorChange
+        else:
+            red += colorChange
+
+        #reduce the amount of green either way
+        green -= colorChange
+
+        self.color = rgbString(red, green, blue)
+        '''
+            
+class BridgeBed(Constraint):
+    def __init__(self, *args):
+        super(BridgeBed, self).__init__(*args, collidable=True)
+        self.color = "brown"
+
+class landBeam(Constraint):
+    pass
