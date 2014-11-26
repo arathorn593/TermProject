@@ -289,6 +289,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
                 self.placeBridge()
         elif(event.keysym == "d"):
             self.debug = not self.debug
+            self.environ.debug = not self.environ.debug
+        elif(event.keysym == "p"):
+            self.environ.pause()
 
     def onTimerFiredWrapper(self):
         if(self.timerDelay == None): return
@@ -347,7 +350,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def drawGame(self):
         self.drawScore()
-        self.environ.draw(self.canvas)
+        self.environ.draw(self.canvas, self.debug)
         if(self.isGameOver): self.drawGameOver()
         if(self.mode == "build"):
             self.drawBuildScreen()

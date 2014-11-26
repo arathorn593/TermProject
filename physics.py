@@ -112,6 +112,7 @@ class PhysEnvironment(object):
         self.objects = []
 
         self.resolveIterations = 5
+        self.debug = False
 
     def start(self):
         if(not self.hasStarted):
@@ -210,7 +211,12 @@ class PhysEnvironment(object):
             edgeList += obj.getEdges()
 
         edgeList.sort()
-        #print edgeList
+        #print the edge list for debuging
+        if(self.debug):
+            print "edgeList = [",
+            for edge in edgeList:
+                print edge[1],
+            print "]"
         return edgeList
 
     #I came up with an initial rough version of this algorith, but
@@ -223,13 +229,22 @@ class PhysEnvironment(object):
         #the list of objects that could be colliding
         objList = []
         for edge in edgeList:
+            if(self.debug):
+                print "edge = (%d, %s)" % (edge[1], edge[2])
+                print "objList before = [",
+                for obj in objList:
+                    print "%d," % obj.environIndex,
+                print "]"
+
             (x, i, side) = edge
             if(side == "L"):
                 newObj = self.objects[i]
                 if(len(objList) > 0):
                     if(isinstance(newObj, Weight)):
+                        if(self.debug): print "new obj is a weight"
                         newObj.fixCollisions(objList)
                     else:
+                        if(self.debug): print "new obj is not a weight"
                         for i in xrange(len(objList)):
                             if(isinstance(objList[i], Weight)):
                                 objList[i].fixCollisions([newObj])
@@ -241,10 +256,11 @@ class PhysEnvironment(object):
                         objList.pop(index)
                         break
 
-
-
-
-
+            if(self.debug):
+                print "objList after = [",
+                for obj in objList:
+                    print "%d," % obj.environIndex,
+                print "]"
 
     #update each object in the list, assume each is a physObject
     #returns the number of objects that left the bottom of the screen
@@ -264,18 +280,9 @@ class PhysEnvironment(object):
                 #if(not self.resolveCollisions()): break
 
             objExitingBottom = 0
+            indeciesToDelete = []
             #once constraints and collisions handled, update objects
-            indecies = self.otherIndexes + self.weightIndexes
-            print indecies, self.otherIndexes, self.weightIndexes
-            for index in indecies:
-                if(index >= len(self.objects)):
-                    print '''
-                    index = %d
-                    len(self.objects) = %d
-                    otherIndexes = %s
-                    weightIndexes = %s
-                    ''' % (index, len(self.objects), str(self.otherIndexes),
-                           str(self.weightIndexes))
+            for index in self.otherIndexes + self.weightIndexes:
                 self.objects[index].update(dt, width, height)
                 if(not self.objects[index].inScreen):
                     #check if the object exited the bottom
@@ -285,22 +292,25 @@ class PhysEnvironment(object):
                         objExitingBottom += 1
                     #delete the object either way
                     if(not isinstance(self.objects[index], Node)):
-                        self.objects[index].delete()
+                        indeciesToDelete.append(index)
+
+            for index in indeciesToDelete:
+                self.objects[index].delete()
 
             return objExitingBottom
         
 
     #draw all the objects in the simulation
-    def draw(self, canvas):
+    def draw(self, canvas, debug=False):
         #draw objects so constraints are in front but behind nodes
         for index in self.weightIndexes:
-            self.objects[index].draw(canvas)
+            self.objects[index].draw(canvas, debug)
 
         for index in self.constraintIndexes:
-            self.objects[index].draw(canvas)
+            self.objects[index].draw(canvas, debug)
 
         for index in self.otherIndexes:
-            self.objects[index].draw(canvas)
+            self.objects[index].draw(canvas, debug)
 
     #returns the object at the given screen coords or none
     def getClickedObj(self, screenX, screenY):
@@ -372,12 +382,14 @@ class PhysObject(object):
         self.environ.deleteObj(self, self.environIndex)
 
     #draw the object
-    def draw(self, canvas):
+    def draw(self, canvas, debug=False):
         #base object just draws a black circle
         r = 5
         (x, y) = self.environ.getScreenXY(self.position)
 
         canvas.create_oval(x-r, y-r, x+r, y+r, fill="black")
+        if(debug):
+            canvas.create_text(x, y, text=self.environIndex)
 
     #check if the object was clicked
     def isClicked(self, x, y):
@@ -447,14 +459,13 @@ class Node(PhysObject):
 
         super(Node, self).delete() 
 
-    def draw(self, canvas):
+    def draw(self, canvas, debug=False):
+        r = self.r
+        (x, y) = self.environ.getScreenXY(self.position)
         if(self.visible):
-            r = self.r
-            (x, y) = self.environ.getScreenXY(self.position)
-
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
-            canvas.create_text(x, y, text=str(len(self.constraints)), 
-                               fill="white")
+        if(debug):
+            canvas.create_text(x, y, text=self.environIndex, fill="white")
 
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked
@@ -479,8 +490,17 @@ class Weight(PhysObject):
     #collision resolution algorithm adapted from:
     #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
     def fixCollisions(self, objList):
+        returnVal = False
+        debug = self.environ.debug
+        if(debug):
+            print "objList in collision func: [",
+            for obj in objList:
+                print obj.environIndex,
+            print "]"
         for obj in objList:
+            if(debug): print "testing index %d" % obj.environIndex
             if(isinstance(obj, Weight)):
+                if(debug): print "object is a weight"
                 #vector from this object to the other object's center
                 centerVect = obj.position - self.position
                 dist = centerVect.getMag()
@@ -494,9 +514,10 @@ class Weight(PhysObject):
 
                     self.position += centerVect*0.5*scaleFactor
                     obj.position -= centerVect*0.5*scaleFactor
-                    return True
+                    returnVal = True
 
             elif(isinstance(obj, Constraint) and obj.isCollidable):
+                if(debug): print "object is a collidable constraint"
                 minDist = (self.environ.getEnvironScalar(self.r) +
                            self.environ.getEnvironScalar(obj.width/2))
     
@@ -526,15 +547,15 @@ class Weight(PhysObject):
                         scaleFactor = displacement / dist
 
                         self.position += perpVect*.5*scaleFactor
-                        #obj.nodes[0].addForce(self.mass * Vector(0, -1))
-                        #obj.nodes[1].addForce(self.mass * Vector(0, -1))
+                        obj.nodes[0].addForce(self.mass * Vector(0, -1))
+                        obj.nodes[1].addForce(self.mass * Vector(0, -1))
                         if(not obj.nodes[0].isFixed):
                             obj.nodes[0].position -= perpVect*0.5*scaleFactor
                         if(not obj.nodes[1].isFixed):
                             obj.nodes[1].position -= perpVect*0.5*scaleFactor
-                        return True
+                        returnVal = True
         #no collisions occured
-        return False
+        return returnVal
 
     def update(self, dt, width, height):
         #first, update as usual
@@ -547,11 +568,13 @@ class Weight(PhysObject):
         if(y - r > height or y + r < 0 or x - r > width or x + r < 0):
             self.inScreen = False
 
-    def draw(self, canvas):
+    def draw(self, canvas, debug=False):
         r = self.r
         (cx, cy) = self.environ.getScreenXY(self.position)
 
         canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill=self.color) 
+        if(debug):
+            canvas.create_text(cx, cy, text=self.environIndex)
 
     def getEdges(self):
         (x, y) = self.position.getXY()
@@ -653,13 +676,15 @@ class Constraint(object):
     def getLength(self):
         return (self.nodes[0].position - self.nodes[1].position).getMag()
 
-    def draw(self, canvas):
+    def draw(self, canvas, debug=False):
         if(self.environ.isSimulating):
             self.updateColor()
         #node coordinates
         (x1, y1) = self.environ.getScreenXY(self.nodes[0].position)
         (x2, y2) = self.environ.getScreenXY(self.nodes[1].position)
         canvas.create_line(x1, y1, x2, y2, fill=self.color, width=self.width)
+        if(debug):
+            canvas.create_text((x1+x2)/2, (y1+y2)/2, text=self.environIndex)
 
     def getEdges(self):
         i = self.environIndex
