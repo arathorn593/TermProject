@@ -205,6 +205,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.initButtons()
         self.buildType = BridgeBed
+        self.maxBeamLen = 3
 
     def onMouseDragWrapper(self, event):
         self.onMouseDrag(event)
@@ -217,18 +218,22 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def onMouseReleased(self, event):
         if(self.mode == "build"):
             if(self.tempNode != None):
-                selection = self.environ.getClickedObj(event.x, event.y)
-                if(selection != None and isinstance(selection, Node)):
-                    #if the original node was ended on then delete spring too
-                    self.tempNode.delete()
-                    #only make new constraint if the start node wasn't ended on
-                    if(not (selection == self.startNode)):
-                        self.buildType(self.startNode, selection, self.breakRatio,
-                                   self.environ)
+                #check if the beam is too long
+                if(self.tempConstraint.getLength() < self.maxBeamLen):
+                    selection = self.environ.getClickedObj(event.x, event.y)
+                    if(selection != None and isinstance(selection, Node)):
+                        #if the original node was ended on then delete 
+                        self.tempNode.delete()
+                        #only make new constraint if the start node 
+                        #wasn't ended on
+                        if(not (selection == self.startNode)):
+                            self.buildType(self.startNode, selection, 
+                                           self.breakRatio, self.environ)
 
+                    else:
+                        self.tempNode.visible = True
                 else:
-                    self.tempNode.visible = True
-
+                    self.tempNode.delete()
                 #reset temp variables
                 self.tempConstraint = None
                 self.tempNode = None
@@ -237,6 +242,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def onMouseDrag(self, event):
         if(self.tempNode != None and self.mode == "build"):
             self.tempNode.position = self.environ.getVect(event.x, event.y)
+            if(self.tempConstraint.getLength() > self.maxBeamLen):
+                self.tempConstraint.color = "red"
+            else:
+                self.tempConstraint.color = self.tempConstraint.baseColor
 
     def onMousePressed(self, event):
         if(self.mode == "build"):

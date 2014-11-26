@@ -109,7 +109,7 @@ class PhysEnvironment(object):
         self.constraints = []
         self.objects = []
 
-        self.resolveIterations = 10
+        self.resolveIterations = 5
 
     def start(self):
         if(not self.hasStarted):
@@ -185,28 +185,35 @@ class PhysEnvironment(object):
         #get rid of the tail element (that is a duplicate)
         del objList[-1]
 
+    def resolveCollisions(self):
+        #resolve collisions
+        for i in xrange(len(self.objects)):
+            if(isinstance(self.objects[i], Weight)):
+                self.objects[i].fixCollisions(self.objects[i+1:] + 
+                                              self.constraints)
+
+    def resolveCollisions2(self):
+        #list of tuples in the form: (xVal, index,)
+        edgeList = self.generateEdgeList()
+
+
+
     #update each object in the list, assume each is a physObject
     #returns the number of objects that left the bottom of the screen
     def update(self, dt, width, height):
         if(self.isSimulating):
             for iteration in xrange(self.resolveIterations):
-                fixedCollisions = True
-                #stop adjusting if all collisions fixed
-                #print fixedCollisions
-                if(not fixedCollisions): break
+                #fixedCollisions = True
 
-                #resolve collisions
-                for i in xrange(len(self.objects)):
-                    if(isinstance(self.objects[i], Weight)):
-                        #resolve colisions with the rest of the list, the 
-                        #earlier part was already resolved
-                        fixedCollisions = self.objects[i].fixCollisions(
-                                          self.objects[i+1:] + 
-                                          self.constraints)
+                self.resolveCollisions()
 
                 #resolve constraints
                 for constraint in self.constraints:
                     constraint.resolve()
+
+                #stop adjusting if all collisions fixed
+                #print fixedCollisions
+                #if(not self.resolveCollisions()): break
 
             objExitingBottom = 0
             #once constraints and collisions handled, update objects
@@ -382,6 +389,8 @@ class Node(PhysObject):
             (x, y) = self.environ.getScreenXY(self.position)
 
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
+            canvas.create_text(x, y, text=str(len(self.constraints)), 
+                               fill="white")
 
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked
@@ -452,13 +461,13 @@ class Weight(PhysObject):
                         displacement = dist - minDist
                         scaleFactor = displacement / dist
 
-                        self.position += perpVect*.01*scaleFactor
+                        self.position += perpVect*.5*scaleFactor
                         #obj.nodes[0].addForce(self.mass * Vector(0, -1))
                         #obj.nodes[1].addForce(self.mass * Vector(0, -1))
                         if(not obj.nodes[0].isFixed):
-                            obj.nodes[0].position -= perpVect*0.99*scaleFactor
+                            obj.nodes[0].position -= perpVect*0.5*scaleFactor
                         if(not obj.nodes[1].isFixed):
-                            obj.nodes[1].position -= perpVect*0.99*scaleFactor
+                            obj.nodes[1].position -= perpVect*0.5*scaleFactor
                         return True
         #no collisions occured
         return False
@@ -485,7 +494,8 @@ class Constraint(object):
     #node1, node2 are the nodes that the constraint is attached to
     #breakRatio is the fraction of the start len the constraint will move
     #before breaking
-    def __init__(self, node1, node2, breakRatio, environ, collidable):
+    def __init__(self, node1, node2, breakRatio, environ, collidable, 
+                 baseColor="black"):
         self.isCollidable = collidable
         self.environ = environ
         self.environIndex = self.environ.add(self)
@@ -498,12 +508,11 @@ class Constraint(object):
         self.breakRatio = breakRatio
         self.restLen = (self.nodes[0].position-self.nodes[1].position).getMag()
 
-        self.updateInfo()
-
         #drawing constants
         self.width = 5
-        #default is black
-        self.color = "black"
+        self.baseColor = baseColor
+        self.color = self.baseColor
+        self.updateInfo()
 
     #initialize for simulation
     def initForSim(self):
@@ -527,8 +536,6 @@ class Constraint(object):
         self.displacement = self.curLen - self.restLen
 
         self.lenRatio = self.displacement/self.curLen
-
-        self.updateColor()
 
     def breakConstraint(self):
         #create new nodes on the ends of the constraint so that it 
@@ -569,6 +576,10 @@ class Constraint(object):
         #now, remove from environment
         self.environ.deleteObj(self, self.environIndex)
 
+    #get the length without updating the color and other info
+    def getLength(self):
+        return (self.nodes[0].position - self.nodes[1].position).getMag()
+
     def draw(self, canvas):
         if(self.environ.isSimulating):
             self.updateColor()
@@ -582,12 +593,13 @@ class Constraint(object):
 
 class BridgeBeam(Constraint):
     def __init__(self, *args):
-        super(BridgeBeam, self).__init__(*args, collidable=False)
-        self.color = "gray"
-    '''
+        self.colorVals = (180, 180, 180)
+        super(BridgeBeam, self).__init__(*args, collidable=False, 
+                                         baseColor=rgbString(*self.colorVals))
+    
     def updateColor(self):
         #base color values
-        (red, green, blue) = (0, 255, 0)
+        (red, green, blue) = self.colorVals
 
         #displaceRatio is 1 or -1 right at breaking
         displaceRatio = self.lenRatio/self.breakRatio
@@ -597,23 +609,53 @@ class BridgeBeam(Constraint):
         elif(displaceRatio < -1):
             displaceRatio = -1
 
-        colorChange = abs(displaceRatio) * 255
+        increaseChange = abs(displaceRatio) * 75
+        decreaseChange = abs(displaceRatio) * 180
 
         if(displaceRatio < 0):
-            blue += colorChange
+            blue += increaseChange
+            red -= decreaseChange
+            green -= decreaseChange
         else:
-            red += colorChange
-
-        #reduce the amount of green either way
-        green -= colorChange
+            red += increaseChange
+            blue -= decreaseChange
+            green -= decreaseChange
 
         self.color = rgbString(red, green, blue)
-        '''
+        
             
 class BridgeBed(Constraint):
     def __init__(self, *args):
-        super(BridgeBed, self).__init__(*args, collidable=True)
-        self.color = "brown"
+        self.colorVals = (100, 100, 100)
+        super(BridgeBed, self).__init__(*args, collidable=True, 
+                                        baseColor=rgbString(*self.colorVals))
+        print self.color
+
+    def updateColor(self):
+        #base color values
+        (red, green, blue) = self.colorVals
+
+        #displaceRatio is 1 or -1 right at breaking
+        displaceRatio = self.lenRatio/self.breakRatio
+
+        if(displaceRatio > 1): 
+            displaceRatio = 1
+        elif(displaceRatio < -1):
+            displaceRatio = -1
+
+        increaseChange = abs(displaceRatio) * 155
+        decreaseChange = abs(displaceRatio) * 100
+
+        if(displaceRatio < 0):
+            blue += increaseChange
+            red -= decreaseChange
+            green -= decreaseChange
+        else:
+            red += increaseChange
+            blue -= decreaseChange
+            green -= decreaseChange
+
+        self.color = rgbString(red, green, blue)
 
 class landBeam(Constraint):
     pass
