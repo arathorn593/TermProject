@@ -1,0 +1,4 @@
+Check in the physEnvironment update function.
+When looping over the indecies in other and weights, the update function of one of those objects is deleting itself which is causing the weightIndexes list to change. However, the list to iterate over was created by concating the other and weight lists. 
+Solutions: while loop that keeps track of deleted stuff. (may skip some things if not careful)
+	   or...iterate over each list separately? would that work?

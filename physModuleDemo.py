@@ -205,7 +205,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.initButtons()
         self.buildType = BridgeBed
-        self.maxBeamLen = 3
+        self.maxBeamLen = 20
 
     def onMouseDragWrapper(self, event):
         self.onMouseDrag(event)
@@ -310,7 +310,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         #print "timeDif = %.5f dt = %.5f remaining = %.2f" % (timeDif, 
         #                                              self.dt, frameRemaining)
 
-        self.timerDelay = max(frameRemaining, 1)
+        self.timerDelay = 10#max(frameRemaining, 1)
 
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
 

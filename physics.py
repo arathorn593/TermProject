@@ -106,7 +106,9 @@ class PhysEnvironment(object):
         #has the simulation been started once
         self.hasStarted = False 
 
-        self.constraints = []
+        self.constraintIndexes = []
+        self.weightIndexes = []
+        self.otherIndexes = []
         self.objects = []
 
         self.resolveIterations = 5
@@ -114,8 +116,8 @@ class PhysEnvironment(object):
     def start(self):
         if(not self.hasStarted):
             #init all constraints for starting the animation
-            for constraint in self.constraints:
-                constraint.initForSim()
+            for index in self.constraintIndexes:
+                self.objects[index].initForSim()
 
         self.isSimulating = True
         self.hasStarted = True
@@ -159,42 +161,88 @@ class PhysEnvironment(object):
 
     #add the given object to the environments list
     def add(self, obj):
+        self.objects.append(obj)
+        index = len(self.objects) - 1
         if(isinstance(obj, Constraint)):
-            self.constraints.append(obj)
-            return len(self.constraints) - 1
-        elif(isinstance(obj, PhysObject)):
-            self.objects.append(obj)
-            return len(self.objects) - 1
+            self.constraintIndexes.append(index)
+        elif(isinstance(obj, Weight)):
+            self.weightIndexes.append(index)
         else:
-            raise Exception("cannot add this thing to the environment")
+            self.otherIndexes.append(index)
+
+        return index
 
     def deleteObj(self, obj, objIndex):
-        if(isinstance(obj, Constraint)):
-            objList = self.constraints
-        elif(isinstance(obj, PhysObject)):
-            objList = self.objects
-        else:
-            raise Exception("cannot delete this thing from the environment")
-
         #remove from the list by shifting everything else down
-        for i in xrange(objIndex, len(objList) - 1):
-            objList[i] = objList[i+1]
+        for i in xrange(objIndex, len(self.objects) - 1):
+            self.objects[i] = self.objects[i+1]
             #update the constraint's index
-            objList[i].environIndex = i
+            self.objects[i].environIndex = i
 
         #get rid of the tail element (that is a duplicate)
-        del objList[-1]
+        del self.objects[-1]
 
-    def resolveCollisions(self):
+        #recalculate indexes
+        self.constraintIndexes = []
+        self.weightIndexes = []
+        self.otherIndexes = []
+        for i in xrange(len(self.objects)):
+            if(isinstance(self.objects[i], Constraint)):
+                self.constraintIndexes.append(i)
+            elif(isinstance(self.objects[i], Weight)):
+                self.weightIndexes.append(i)
+            else:
+                self.otherIndexes.append(i)
+
+    def resolveCollisions1(self):
         #resolve collisions
         for i in xrange(len(self.objects)):
             if(isinstance(self.objects[i], Weight)):
                 self.objects[i].fixCollisions(self.objects[i+1:] + 
                                               self.constraints)
 
-    def resolveCollisions2(self):
-        #list of tuples in the form: (xVal, index,)
+    def generateEdgeList(self):
+        edgeList = []
+
+        for obj in self.objects:
+            #if(isinstance(obj, Weight)):
+            #    print obj.getEdges()
+            edgeList += obj.getEdges()
+
+        edgeList.sort()
+        #print edgeList
+        return edgeList
+
+    #I came up with an initial rough version of this algorith, but
+    # my roomate helped me get it to this point
+    def resolveCollisions(self):
+        #list of tuples in the form: (xVal, index, "R"/"L" (right or left))
+        #note: xval is in environ coordinates
         edgeList = self.generateEdgeList()
+
+        #the list of objects that could be colliding
+        objList = []
+        for edge in edgeList:
+            (x, i, side) = edge
+            if(side == "L"):
+                newObj = self.objects[i]
+                if(len(objList) > 0):
+                    if(isinstance(newObj, Weight)):
+                        newObj.fixCollisions(objList)
+                    else:
+                        for i in xrange(len(objList)):
+                            if(isinstance(objList[i], Weight)):
+                                objList[i].fixCollisions([newObj])
+                objList.append(newObj)
+
+            elif(side == "R"):
+                for index in xrange(len(objList)):
+                    if(objList[index].environIndex == i):
+                        objList.pop(index)
+                        break
+
+
+
 
 
 
@@ -208,8 +256,8 @@ class PhysEnvironment(object):
                 self.resolveCollisions()
 
                 #resolve constraints
-                for constraint in self.constraints:
-                    constraint.resolve()
+                for index in self.constraintIndexes:
+                    self.objects[index].resolve()
 
                 #stop adjusting if all collisions fixed
                 #print fixedCollisions
@@ -217,40 +265,53 @@ class PhysEnvironment(object):
 
             objExitingBottom = 0
             #once constraints and collisions handled, update objects
-            for obj in self.objects:
-                obj.update(dt, width, height)
-                if(not obj.inScreen):
+            indecies = self.otherIndexes + self.weightIndexes
+            print indecies, self.otherIndexes, self.weightIndexes
+            for index in indecies:
+                if(index >= len(self.objects)):
+                    print '''
+                    index = %d
+                    len(self.objects) = %d
+                    otherIndexes = %s
+                    weightIndexes = %s
+                    ''' % (index, len(self.objects), str(self.otherIndexes),
+                           str(self.weightIndexes))
+                self.objects[index].update(dt, width, height)
+                if(not self.objects[index].inScreen):
                     #check if the object exited the bottom
-                    (x, y) = self.getScreenXY(obj.position)
+                    (x, y) = self.getScreenXY(self.objects[index].position)
 
                     if(y > height):
                         objExitingBottom += 1
                     #delete the object either way
-                    if(not isinstance(obj, Node)):
-                        obj.delete()
+                    if(not isinstance(self.objects[index], Node)):
+                        self.objects[index].delete()
 
             return objExitingBottom
         
 
     #draw all the objects in the simulation
     def draw(self, canvas):
-        #draw objects so springs are in front but behind nodes
-        for constraint in self.constraints:
-            constraint.draw(canvas)
+        #draw objects so constraints are in front but behind nodes
+        for index in self.weightIndexes:
+            self.objects[index].draw(canvas)
 
-        for obj in self.objects:
-            obj.draw(canvas)
+        for index in self.constraintIndexes:
+            self.objects[index].draw(canvas)
+
+        for index in self.otherIndexes:
+            self.objects[index].draw(canvas)
 
     #returns the object at the given screen coords or none
     def getClickedObj(self, screenX, screenY):
         #look at objects first, then constraints
-        for obj in self.objects:
-            if(obj.isClicked(screenX, screenY)):
-                return obj
+        for index in self.otherIndexes:
+            if(self.objects[index].isClicked(screenX, screenY)):
+                return self.objects[index]
 
-        for constraint in self.constraints:
-            if(constraint.isClicked(screenX, screenY)):
-                return constraint
+        for index in self.constraintIndexes:
+            if(self.objects[index].isClicked(screenX, screenY)):
+                return self.objects[index]
 
 
 
@@ -326,6 +387,9 @@ class PhysObject(object):
     #Fix any collisions and return true if any collisions fixed
     def fixCollisions(self, objList):
         return False
+
+    def getEdges(self):
+        return []
 
     def __eq__(self, other):
         if(isinstance(other, PhysObject)):
@@ -489,6 +553,15 @@ class Weight(PhysObject):
 
         canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill=self.color) 
 
+    def getEdges(self):
+        (x, y) = self.position.getXY()
+        r = self.environ.getEnvironScalar(self.r)
+        leftEdge = (x-r, self.environIndex, "L")
+        rightEdge = (x+r, self.environIndex, "R")
+        return [leftEdge, rightEdge]
+
+
+
 #does not extend phys object class because it does not act like a physObject
 class Constraint(object):
     #node1, node2 are the nodes that the constraint is attached to
@@ -588,6 +661,18 @@ class Constraint(object):
         (x2, y2) = self.environ.getScreenXY(self.nodes[1].position)
         canvas.create_line(x1, y1, x2, y2, fill=self.color, width=self.width)
 
+    def getEdges(self):
+        i = self.environIndex
+
+        (x0, y0) = self.nodes[0].position.getXY()
+        (x1, y1) = self.nodes[1].position.getXY()
+
+        xLeft = x0 if x0 < x1 else x1
+        xRight = x0 if x0 > x1 else x1
+
+        return [(xLeft, i, "L"), (xRight, i, "R")]
+
+
     def isClicked(self, screenX, screenY):
         return False    
 
@@ -629,7 +714,6 @@ class BridgeBed(Constraint):
         self.colorVals = (100, 100, 100)
         super(BridgeBed, self).__init__(*args, collidable=True, 
                                         baseColor=rgbString(*self.colorVals))
-        print self.color
 
     def updateColor(self):
         #base color values
