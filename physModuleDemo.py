@@ -164,18 +164,22 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.selectedNodeForce = Vector(0, 0)
 
     def initStartButtons(self):
-        x = self.width/2 - self.buttonWidth/2
+        buttonWidth = 300
+        buttonHeight = 100
+        buttonMargin = 10
+
+        x = self.width/2 - buttonWidth/2
         y = self.height / 3
+
         xIncrement = 0
-        yIncrement = self.buttonMargin + self.buttonHeight
+        yIncrement = buttonMargin + buttonHeight
 
         buttonIds = ["Play", "Help"]
         self.startButtons = []
         for identifier in buttonIds:
-            self.startButtons.append(Button(x, y, self.buttonWidth, 
-                                            self.buttonHeight, 
-                                            self.buttonMargin, identifier,
-                                            self.buttonColor, 
+            self.startButtons.append(Button(x, y, buttonWidth, 
+                                            buttonHeight, buttonMargin, 
+                                            identifier, self.buttonColor, 
                                             self.buttonSelectedColor,
                                             identifier))
             x += xIncrement
@@ -229,6 +233,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.initBuildButtons()
         self.initTestButtons()
 
+    #create the environment for the start screen
+    def initStartEnviron(self):
+        pass
+
     def initAnimation(self):
         #constants for noees/springs
         self.nodeMass = 10 #kg
@@ -265,6 +273,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.maxBeamLen = 3
         self.buildEnviron = None
 
+        self.isHelpShown = False
+
     def initBuildMode(self):
         self.placeTerrain()
         self.placeStartNodes()
@@ -277,50 +287,79 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.onMouseReleased(event)
         self.redrawAll()
 
+    def buildMouseReleased(self, event):
+        if(self.tempNode != None):
+            #check if the beam is too long
+            if(self.tempConstraint.getLength() < self.maxBeamLen):
+                selection = self.environ.getClickedObj(event.x, event.y)
+                if(selection != None and isinstance(selection, Node)):
+                    #if the original node was ended on then delete 
+                    self.tempNode.delete()
+                    #only make new constraint if the start node 
+                    #wasn't ended on
+                    if(not (selection == self.startNode)):
+                        self.buildType(self.startNode, selection, 
+                                       self.breakRatio, self.environ)
+
+                else:
+                    self.tempNode.visible = True
+            else:
+                self.tempNode.delete()
+            #reset temp variables
+            self.tempConstraint = None
+            self.tempNode = None
+            self.startNode = None
+
     def onMouseReleased(self, event):
         if(self.mode == "build"):
-            if(self.tempNode != None):
-                #check if the beam is too long
-                if(self.tempConstraint.getLength() < self.maxBeamLen):
-                    selection = self.environ.getClickedObj(event.x, event.y)
-                    if(selection != None and isinstance(selection, Node)):
-                        #if the original node was ended on then delete 
-                        self.tempNode.delete()
-                        #only make new constraint if the start node 
-                        #wasn't ended on
-                        if(not (selection == self.startNode)):
-                            self.buildType(self.startNode, selection, 
-                                           self.breakRatio, self.environ)
+            self.buildMouseReleased(event)
 
-                    else:
-                        self.tempNode.visible = True
-                else:
-                    self.tempNode.delete()
-                #reset temp variables
-                self.tempConstraint = None
-                self.tempNode = None
-                self.startNode = None
-
-    def onMouseDrag(self, event):
-        if(self.tempNode != None and self.mode == "build"):
+    def buildMouseDrag(self, event):
+        if(self.tempNode != None):
             self.tempNode.position = self.environ.getVect(event.x, event.y)
             if(self.tempConstraint.getLength() > self.maxBeamLen):
                 self.tempConstraint.color = "red"
             else:
                 self.tempConstraint.color = self.tempConstraint.baseColor
 
-    def onMousePressed(self, event):
+    def onMouseDrag(self, event):
         if(self.mode == "build"):
-            #if(self.testButton.isClicked(event.x, event.y)):
-            #    self.gotoTestMode()
-            self.beamButtons.update(event.x, event.y)
-            if(self.beamButtons.selectedId == "Beam"):
-                self.buildType = BridgeBeam
-            elif(self.beamButtons.selectedId == "Bed"):
-                self.buildType = BridgeBed
+           self.buildMouseDrag(event) 
 
+    def updateBeamButtons(self, event):
+        self.beamButtons.update(event.x, event.y)
+        if(self.beamButtons.selectedId == "Beam"):
+            self.buildType = BridgeBeam
+        elif(self.beamButtons.selectedId == "Bed"):
+            self.buildType = BridgeBed
+
+    #checks to see if a list of buttons was clicked
+    #returns the identifier of the clicked button or none
+    def checkButtonList(self, buttons, event):
+        buttonId = None
+        for button in buttons:
+            if(button.isClicked(event.x, event.y)):
+                buttonId = button.id
+                break
+
+        return buttonId
+
+    #check build buttons,respond appropriately, return true if a button pressed
+    def checkBuildButtons(self, event):
+        buttonId = self.checkButtonList(self.buildButtons, event)
+
+        if(buttonId == "Test"):
+            self.gotoTestMode()
+
+        return buttonId != None
+
+    def buildMousePressed(self, event):
+        self.updateBeamButtons(event)
+
+        #if none of the buttons clicked, then check if the bridge was being
+        #built
+        if(not self.checkBuildButtons(event)):
             selection = self.environ.getClickedObj(event.x, event.y)
-
             if(isinstance(selection, Node)):
                 if(self.tempConstraint == None):
                     pos = self.environ.getVect(event.x, event.y)
@@ -332,20 +371,46 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                                      self.tempNode,
                                                      self.breakRatio, 
                                                      self.environ)
-        elif(self.mode == "test"):
-            if(False):#self.buildButton.isClicked(event.x, event.y)):
-                pass#self.gotoBuildMode()
-            else:
-                pos = self.environ.getVect(event.x, event.y)
 
-                Weight(pos, self.nodeMass*10, self.environ)
-                if(not self.isGameOver):
-                    self.score += 1
-            #self.placeBox(event.x, event.y)
-            #self.selectedNodeForce += Vector(0, -self.forceIncrement*2)
+    def checkTestButtons(self, event):
+        buttonId = self.checkButtonList(self.testButtons, event)
+
+        if(buttonId == "Build"):
+            self.gotoTestMode()
+
+        return (buttonId != None)
+
+    #add a weight to the environment and increment score if needed
+    def addWeight(self, event):
+        pos = self.environ.getVect(event.x, event.y)
+
+        Weight(pos, self.nodeMass*10, self.environ)
+        if(not self.isGameOver):
+            self.score += 1
+
+    def testMousePressed(self, event):
+        if(not self.checkTestButtons(event)):
+            self.addWeight(event)
+
+    def startMousePressed(self, event):
+        buttonId = self.checkButtonList(self.startButtons, event)
+
+        if(buttonId == "Play"):
+            self.gotoBuildMode()
+        elif(buttonId == "Help"):
+            self.isHelpShown = True
+
+    def onMousePressed(self, event):
+        if(self.mode == "build"):
+            self.buildMousePressed(event)
+        elif(self.mode == "test"):
+            self.testMousePressed(event)
+        elif(self.mode == "start"):
+            self.startMousePressed(event)
 
     def gotoTestMode(self):
         self.mode = "test"
+        self.score = 0
         self.buildEnviron = copy.deepcopy(self.environ)
         self.environ.start()
 
@@ -356,40 +421,44 @@ class PhysModuleDemo(EventBasedAnimationClass):
         else:
             self.initBuildMode()
         self.isGameOver = False
-        self.score = 0            
+        self.score = 0
+
+    def restartLevel(self):
+        self.buildEnviron = None
+        self.gotoBuildMode()
+
+    def restartSim(self):
+        self.gotoTestMode()
 
     def onStartKeyPress(self, event):
-        pass
-    def onTestKeyPress(self, event):
-        pass
+        if(event.keysym == "space" or event.keysym == "s"):
+            self.gotoBuildMode()
 
+    def onTestKeyPress(self, event):
+        if(event.keysym == "b"):
+            self.gotoBuildMode()
+        elif(event.keysym == "r"):
+            self.restartSim()
+        elif(event.keysym == "p"):
+            self.environ.pause()
 
     def onBuildKeyPress(self, event):
-        pass
+        if(event.keysym == "r"):
+            self.restartLevel()
+        elif(event.keysym == "s"):
+            self.gotoTestMode()
+        elif(event.keysym == "d"):
+            self.switchDebug()     
 
     def onKeyPressed(self, event):
-        if(self.mode == "start"):
+        if(event.keysym == "h" or event.keysym == "question"):
+            self.isHelpShown = not self.isHelpShown
+        elif(self.mode == "start"):
             self.onStartKeyPress(event)
         elif(self.mode == "test"):
             self.onTestKeyPress(event)
         elif(self.mode == "build"):
             self.onBuildKeyPress(event)
-
-        if(event.keysym == "r"):
-            self.initAnimation()
-        elif(event.keysym == "s"):
-            if(self.mode == "start"):
-                self.gotoBuildMode()
-            else:
-                self.gotoTestMode()
-        elif(event.keysym == "b"):
-            if(self.mode == "test"):
-                self.gotoBuildMode()
-        elif(event.keysym == "d"):
-            self.debug = not self.debug
-            self.environ.debug = not self.environ.debug
-        elif(event.keysym == "p"):
-            self.environ.pause()
 
     def onTimerFiredWrapper(self):
         if(self.timerDelay == None): return
@@ -444,7 +513,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                 fill="black", anchor=NE)
 
     def drawStartScreen(self):
-        self.canvas.create_text(0, 0, anchor=NW, text="START")
+        (x, y) = (self.width/2, self.height/10)
+        self.canvas.create_text(x, y, anchor=N, text="PyBridge", 
+                                font="Arial 50 bold")
+
         for button in self.startButtons:
             button.draw(self.canvas)
 
@@ -454,13 +526,54 @@ class PhysModuleDemo(EventBasedAnimationClass):
             button.draw(self.canvas)
 
     def drawTestScreen(self):
+        if(self.isGameOver): self.drawGameOver()
+        self.drawScore()
         for button in self.testButtons:
             button.draw(self.canvas)
 
+    def drawHelpScreen(self):
+        #one is largest text, two is second largest, etc
+        title = 1
+        subTitle = 2
+        normText = 3
+
+        #list of tuples ("text", textSize)
+        helpText = [("Help", title), 
+                    ("press h or ? to show/hide the help screen", normText),
+                    ("", normText), 
+                    ("Build Screen", subTitle), 
+                    ("Click on a black dot to start a bridge beam", normText),
+                    ("Drag and release to create the beam", normText),
+                    ("Oversized beams will be red and not stay", normText),
+                    ("Click on the \"Beam\" and \"Bed\" buttons", normText),
+                    ("to switch which beam you create", normText),
+                    ("Beams don't collide with objects, but bridge beds do",
+                     normText), ("Test Screen", subTitle),
+                    ("Click to drop a weight onto the bridge", normText)]
+
+        startHeight = 30
+        (x, y) = (self.width/2, startHeight)
+        for line in helpText:
+            (text, weight) = line
+            if(weight == 1): 
+                font = "Arial 30 bold"
+                lineHeight = 70
+            elif(weight == 2):
+                font = "Arial 20 bold"
+                lineHeight = 40
+            elif(weight == 3):
+                font = "Arial 15"
+                lineHeight = 25
+
+            self.canvas.create_text(x, y, text=text, font=font, anchor=N)
+            y += lineHeight
+
     def drawGame(self):
-        self.drawScore()
+        if(self.isHelpShown):
+            self.drawHelpScreen()
+            return
+        
         self.environ.draw(self.canvas, self.debug)
-        if(self.isGameOver): self.drawGameOver()
         if(self.mode == "start"):
             self.drawStartScreen()
         if(self.mode == "build"):
@@ -472,9 +585,6 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.canvas.delete(ALL)
         if(self.debug): self.drawDebug()
         self.drawGame()
-        
-
-        
 
 demo = PhysModuleDemo(1250, 750)
 demo.run()
