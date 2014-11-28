@@ -3,6 +3,7 @@ from physics import *
 from Tkinter import *
 import time
 import copy
+import os
 
 #handles buttons
 class Button(object):
@@ -132,13 +133,13 @@ class PhysModuleDemo(EventBasedAnimationClass):
         constraints = []
         for indexes in constraintIndexes:
             (node1Index, node2Index) = indexes
-            constraints.append(self.buildType(nodes[node1Index],nodes[node2Index], 
+            constraints.append(BridgeBed(nodes[node1Index],nodes[node2Index], 
                                           self.breakRatio, self.environ))
 
         self.selectedNode = nodes[2]
         self.selectedNodeForce = Vector(0, 0)
 
-    def placeTerrain(self):
+    def placeTerrain(self, nodePoints, constraintIndexes):
         nodePoints = [(0, 8.5), (5,8.5), (5, 7), (15, 8.5), (15, 7), (25, 8.5), (5, 0), (15, 0)]
 
         nodes = []
@@ -235,7 +236,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     #create the environment for the start screen
     def initStartEnviron(self):
-        pass
+        self.initEnviron()
+        self.placeBridge()
 
     def initAnimation(self):
         #constants for noees/springs
@@ -243,9 +245,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.forceIncrement = 100 #how much the mass increases on a click
         self.breakRatio = 0.05
 
-        self.mode = "start"
-
-        self.initEnviron()
+        self.gotoStartMode()
 
         self.dt = 1/30.0 #seconts (30 fps)
         self.timerDelay = int(self.dt * 1000) #convert to ms
@@ -276,7 +276,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.isHelpShown = False
 
     def initBuildMode(self):
-        self.placeTerrain()
+        self.initEnviron()
+        self.placeTerrain(None, None)
         self.placeStartNodes()
 
     def onMouseDragWrapper(self, event):
@@ -376,7 +377,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         buttonId = self.checkButtonList(self.testButtons, event)
 
         if(buttonId == "Build"):
-            self.gotoTestMode()
+            self.gotoBuildMode()
 
         return (buttonId != None)
 
@@ -399,6 +400,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.gotoBuildMode()
         elif(buttonId == "Help"):
             self.isHelpShown = True
+        else:
+            self.addWeight(event)
 
     def onMousePressed(self, event):
         if(self.mode == "build"):
@@ -407,6 +410,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.testMousePressed(event)
         elif(self.mode == "start"):
             self.startMousePressed(event)
+
+    def gotoStartMode(self):
+        self.mode = "start"
+        self.initStartEnviron()
+        self.environ.start()
 
     def gotoTestMode(self):
         self.mode = "test"
@@ -485,12 +493,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
 
     def onTimerFired(self):
-        if(self.mode == "test"):
-            self.selectedNode.addForce(self.selectedNodeForce)
+        if(self.mode == "test" or self.mode == "start"):
             #the number of objects that left the bottom of the screen
             bottomObjCount = self.environ.update(self.dt,
                                                  self.width, self.height)
-            if(bottomObjCount > 0): 
+            if(bottomObjCount > 0 and self.mode == "test"): 
                 self.isGameOver = True
 
     def drawDebug(self):
