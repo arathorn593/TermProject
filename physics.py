@@ -280,7 +280,7 @@ class PhysEnvironment(object):
                 #if(not self.resolveCollisions()): break
 
             objExitingBottom = 0
-            indeciesToDelete = []
+            objToDelete = []
             #once constraints and collisions handled, update objects
             for index in self.otherIndexes + self.weightIndexes:
                 self.objects[index].update(dt, width, height)
@@ -292,10 +292,10 @@ class PhysEnvironment(object):
                         objExitingBottom += 1
                     #delete the object either way
                     if(not isinstance(self.objects[index], Node)):
-                        indeciesToDelete.append(index)
+                        objToDelete.append(self.objects[index])
 
-            for index in indeciesToDelete:
-                self.objects[index].delete()
+            for obj in objToDelete:
+                obj.delete()
 
             return objExitingBottom
         
@@ -484,7 +484,10 @@ class Weight(PhysObject):
     def __init__(self, *args):
         self.r = 15
         self.color = "orange"
-        
+        #the proportion of the collision distance that the weight moves
+        #the lower this is, the heavier the weights seem
+        self.collisionRatio = 0.4
+        self.frictionCoef = 0.01
         super(Weight, self).__init__(*args)
 
     #collision resolution algorithm adapted from:
@@ -546,14 +549,34 @@ class Weight(PhysObject):
                         displacement = dist - minDist
                         scaleFactor = displacement / dist
 
-                        self.position += perpVect*.5*scaleFactor
-                        obj.nodes[0].addForce(self.mass * Vector(0, -1))
-                        obj.nodes[1].addForce(self.mass * Vector(0, -1))
+                        #weight ratio
+                        wr = self.collisionRatio
+                        #constraint ratio
+                        cr = 1-self.collisionRatio
+                        self.position += perpVect*wr*scaleFactor
+                        #obj.nodes[0].addForce(self.mass * Vector(0, -1))
+                        #obj.nodes[1].addForce(self.mass * Vector(0, -1))
                         if(not obj.nodes[0].isFixed):
-                            obj.nodes[0].position -= perpVect*0.5*scaleFactor
+                            obj.nodes[0].position -= perpVect*cr*scaleFactor
                         if(not obj.nodes[1].isFixed):
-                            obj.nodes[1].position -= perpVect*0.5*scaleFactor
+                            obj.nodes[1].position -= perpVect*cr*scaleFactor
                         returnVal = True
+            #if there was a collision, add friction
+            '''
+            if(returnVal):
+                penetration = minDist - dist
+                frictionScale = 1-self.frictionCoef
+                v = self.position - self.oldPosition
+                #change in velocity
+                dv = v.getMag() - penetration*frictionScale
+                dv = dv if dv < v.getMag() else v.getMag()
+
+                #move oldPos along velocity vector by dv
+                ratio = v.getMag()/dv
+                v *= ratio
+                self.oldPosition += v
+                '''
+
         #no collisions occured
         return returnVal
 
@@ -766,5 +789,7 @@ class BridgeBed(Constraint):
 
         self.color = rgbString(red, green, blue)
 
-class landBeam(Constraint):
-    pass
+class LandBeam(Constraint):
+    def __init__(self, *args):
+        super(LandBeam, self).__init__(*args, collidable=True,
+                                       baseColor="green")

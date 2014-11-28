@@ -2,6 +2,7 @@ from eventBasedAnimationClass import EventBasedAnimationClass
 from physics import *
 from Tkinter import *
 import time
+import copy
 
 #handles buttons
 class Button(object):
@@ -137,9 +138,24 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.selectedNode = nodes[2]
         self.selectedNodeForce = Vector(0, 0)
 
-    def placeStartNodes(self):
-        nodePoints = [(2, 2), (2, 5), (12, 2), (12, 5)]
+    def placeTerrain(self):
+        nodePoints = [(0, 8.5), (5,8.5), (5, 7), (15, 8.5), (15, 7), (25, 8.5), (5, 0), (15, 0)]
 
+        nodes = []
+        for point in nodePoints:
+            (x, y) = point
+            nodes.append(Node(Vector(x, y),self.nodeMass,self.environ,True,
+                              False))
+
+        constraintIndexes = [(0, 1), (1, 2), (2, 6), (3, 4), (4, 7), (3, 5)]
+        constraints = []
+        for indexes in constraintIndexes:
+            (node1Index, node2Index) = indexes
+            constraints.append(LandBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, self.environ))
+
+    def placeStartNodes(self):
+        nodePoints = [(5,8.5), (5, 7), (15, 8.5), (15, 7)]
+        
         for point in nodePoints:
             (x, y) = point
             self.selectedNode = Node(Vector(x, y), self.nodeMass, 
@@ -147,28 +163,71 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.selectedNodeForce = Vector(0, 0)
 
-    def initButtons(self):
-        buttonMargin = 5
-        buttonWidth = 100
-        buttonHeight = 40
-        color = "blue"
-        selectedColor = "green"
-        (x, y) = (0, 0)
+    def initStartButtons(self):
+        x = self.width/2 - self.buttonWidth/2
+        y = self.height / 3
         xIncrement = 0
-        yIncrement = buttonMargin + buttonHeight
+        yIncrement = self.buttonMargin + self.buttonHeight
+
+        buttonIds = ["Play", "Help"]
+        self.startButtons = []
+        for identifier in buttonIds:
+            self.startButtons.append(Button(x, y, self.buttonWidth, 
+                                            self.buttonHeight, 
+                                            self.buttonMargin, identifier,
+                                            self.buttonColor, 
+                                            self.buttonSelectedColor,
+                                            identifier))
+            x += xIncrement
+            y += yIncrement 
+
+
+    def initBuildButtons(self):
+        (x, y) = (0, 0)
+        self.buildButtons = []
+        xIncrement = 0
+        yIncrement = self.buttonMargin + self.buttonHeight
         buttonIds = ["Beam", "Bed"]
-        buttons = []
+        buttons = []        
 
         for identifier in buttonIds:
-            buttons.append(Button(x, y, buttonWidth, buttonHeight, 
-                                  buttonMargin, identifier, color, 
-                                  selectedColor, identifier))
-
+            buttons.append(Button(x, y, self.buttonWidth, self.buttonHeight, 
+                                  self.buttonMargin, identifier, 
+                                  self.buttonColor, 
+                                  self.buttonSelectedColor, identifier))
             x += xIncrement
             y += yIncrement
 
-        self.toggleButtons = ToggleButtons(buttons)
-        self.toggleButtons.select("Bed")
+        self.beamButtons = ToggleButtons(buttons)
+        self.beamButtons.select("Bed")
+
+        self.buildButtons.append(Button(x, y, self.buttonWidth, 
+                                        self.buttonHeight,
+                                        self.buttonMargin, "Test", 
+                                        self.buttonColor,
+                                        self.buttonSelectedColor, "Test"))
+
+    def initTestButtons(self):
+        (x, y) = (0, 0)
+        self.testButtons = []
+        self.testButtons.append(Button(x, y, self.buttonWidth, 
+                                       self.buttonHeight,
+                                       self.buttonMargin, "Build", 
+                                       self.buttonColor,
+                                       self.buttonSelectedColor, "Build"))
+
+
+
+    def initButtons(self):
+        self.buttonMargin = 5
+        self.buttonWidth = 100
+        self.buttonHeight = 40
+        self.buttonColor = "blue"
+        self.buttonSelectedColor = "green"
+        
+        self.initStartButtons()
+        self.initBuildButtons()
+        self.initTestButtons()
 
     def initAnimation(self):
         #constants for noees/springs
@@ -176,11 +235,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.forceIncrement = 100 #how much the mass increases on a click
         self.breakRatio = 0.05
 
+        self.mode = "start"
+
         self.initEnviron()
-
-        self.placeStartNodes()
-
-        self.mode = "build"
 
         self.dt = 1/30.0 #seconts (30 fps)
         self.timerDelay = int(self.dt * 1000) #convert to ms
@@ -205,7 +262,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.initButtons()
         self.buildType = BridgeBed
-        self.maxBeamLen = 20
+        self.maxBeamLen = 3
+        self.buildEnviron = None
+
+    def initBuildMode(self):
+        self.placeTerrain()
+        self.placeStartNodes()
 
     def onMouseDragWrapper(self, event):
         self.onMouseDrag(event)
@@ -249,10 +311,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def onMousePressed(self, event):
         if(self.mode == "build"):
-            self.toggleButtons.update(event.x, event.y)
-            if(self.toggleButtons.selectedId == "Beam"):
+            #if(self.testButton.isClicked(event.x, event.y)):
+            #    self.gotoTestMode()
+            self.beamButtons.update(event.x, event.y)
+            if(self.beamButtons.selectedId == "Beam"):
                 self.buildType = BridgeBeam
-            elif(self.toggleButtons.selectedId == "Bed"):
+            elif(self.beamButtons.selectedId == "Bed"):
                 self.buildType = BridgeBed
 
             selection = self.environ.getClickedObj(event.x, event.y)
@@ -269,24 +333,58 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                                      self.breakRatio, 
                                                      self.environ)
         elif(self.mode == "test"):
-            pos = self.environ.getVect(event.x, event.y)
+            if(False):#self.buildButton.isClicked(event.x, event.y)):
+                pass#self.gotoBuildMode()
+            else:
+                pos = self.environ.getVect(event.x, event.y)
 
-            Weight(pos, self.nodeMass*10, self.environ)
-            if(not self.isGameOver):
-                self.score += 1
+                Weight(pos, self.nodeMass*10, self.environ)
+                if(not self.isGameOver):
+                    self.score += 1
             #self.placeBox(event.x, event.y)
             #self.selectedNodeForce += Vector(0, -self.forceIncrement*2)
 
+    def gotoTestMode(self):
+        self.mode = "test"
+        self.buildEnviron = copy.deepcopy(self.environ)
+        self.environ.start()
+
+    def gotoBuildMode(self):
+        self.mode = "build"
+        if(self.buildEnviron != None):
+            self.environ = self.buildEnviron
+        else:
+            self.initBuildMode()
+        self.isGameOver = False
+        self.score = 0            
+
+    def onStartKeyPress(self, event):
+        pass
+    def onTestKeyPress(self, event):
+        pass
+
+
+    def onBuildKeyPress(self, event):
+        pass
 
     def onKeyPressed(self, event):
+        if(self.mode == "start"):
+            self.onStartKeyPress(event)
+        elif(self.mode == "test"):
+            self.onTestKeyPress(event)
+        elif(self.mode == "build"):
+            self.onBuildKeyPress(event)
+
         if(event.keysym == "r"):
             self.initAnimation()
         elif(event.keysym == "s"):
-            self.mode = "test"
-            self.environ.start()
+            if(self.mode == "start"):
+                self.gotoBuildMode()
+            else:
+                self.gotoTestMode()
         elif(event.keysym == "b"):
-            if(self.mode == "build"):
-                self.placeBridge()
+            if(self.mode == "test"):
+                self.gotoBuildMode()
         elif(event.keysym == "d"):
             self.debug = not self.debug
             self.environ.debug = not self.environ.debug
@@ -345,15 +443,30 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.canvas.create_text(x, y, text=self.score, font="Arial 15 bold",
                                 fill="black", anchor=NE)
 
+    def drawStartScreen(self):
+        self.canvas.create_text(0, 0, anchor=NW, text="START")
+        for button in self.startButtons:
+            button.draw(self.canvas)
+
     def drawBuildScreen(self):
-        self.toggleButtons.draw(self.canvas)
+        self.beamButtons.draw(self.canvas)
+        for button in self.buildButtons:
+            button.draw(self.canvas)
+
+    def drawTestScreen(self):
+        for button in self.testButtons:
+            button.draw(self.canvas)
 
     def drawGame(self):
         self.drawScore()
         self.environ.draw(self.canvas, self.debug)
         if(self.isGameOver): self.drawGameOver()
+        if(self.mode == "start"):
+            self.drawStartScreen()
         if(self.mode == "build"):
             self.drawBuildScreen()
+        elif(self.mode == "test"):
+            self.drawTestScreen()
 
     def redrawAll(self):
         self.canvas.delete(ALL)
@@ -363,5 +476,5 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         
 
-demo = PhysModuleDemo(750, 500)
+demo = PhysModuleDemo(1250, 750)
 demo.run()
