@@ -412,7 +412,8 @@ class PhysObject(object):
   
 #this class is for constrained particles
 class Node(PhysObject):
-    def __init__(self, position, mass, environ, isFixed, visible=True):
+    def __init__(self, position, mass, environ, isFixed, visible=True, 
+                 color="black"):
         #list of constraints the node is connected to
         self.constraints = []
         #list of indexes of the node in the constraints' node list
@@ -425,7 +426,7 @@ class Node(PhysObject):
 
         #drawing constants
         self.r = 10
-        self.color = "black"
+        self.color = color
         self.visible = visible
 
     def update(self, dt, width, height):
@@ -465,7 +466,7 @@ class Node(PhysObject):
         if(self.visible):
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
         if(debug):
-            canvas.create_text(x, y, text=self.environIndex, fill="white")
+            canvas.create_text(x, y, text=len(self.constraints), fill="white")
 
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked

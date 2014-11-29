@@ -22,8 +22,7 @@ class Button(object):
     #creates a button at x, y of specified dimensions with the given text and
     #color. selectedColor is what color the button is when selected.
     #id is an identifier for the button. 
-    def __init__(self, x, y, width, height, margin, text, color, selectColor, 
-                 identifier):
+    def __init__(self, x, y, width, height, margin, text, color, selectColor, identifier):
         (self.x0, self.y0) = (x + margin, y + margin)
         (self.x1, self.y1) = (self.x0+width-margin*2, self.y0+height-margin*2)
 
@@ -239,8 +238,38 @@ class PhysModuleDemo(EventBasedAnimationClass):
             x += xIncrement
             y += yIncrement 
 
+    def getButtonList(self, x, y, xInc, yInc, width, height, margin, color,              selectedColor, idList, textList=None):
+        if(textList == None): textList = idList
+        #make sure there are enough lables for the buttons
+        assert(len(textList) == len(idList))
+
+        buttons = []
+        for i in xrange(len(idList)):
+            buttons.append(Button(x, y, width, height, margin, textList[i], color, selectedColor, idList[i]))
+            x += xInc
+            y += yInc
+
+        return buttons
+
     def initMakeButtons(self):
-        pass
+        (x, y) = (0, 0)
+        (xInc, yInc) = (0, self.buttonHeight)
+        toggleIdList = ["Node", "Land"]
+        toggleList = self.getButtonList(x, y, xInc, yInc, self.buttonWidth, 
+                                        self.buttonHeight, self.buttonMargin, 
+                                        self.buttonColor, 
+                                        self.buttonSelectedColor, toggleIdList)
+
+        self.terrainButtons = ToggleButtons(toggleList)
+
+        makeButtonIdList = ["Save", "Quit"]
+        self.makeButtons = self.getButtonList(x, y+yInc*2, xInc, yInc, 
+                                              self.buttonWidth, 
+                                              self.buttonHeight, 
+                                              self.buttonMargin, 
+                                              self.buttonColor, 
+                                              self.buttonSelectedColor,
+                                              makeButtonIdList)
 
     def initBuildButtons(self):
         (x, y) = (0, 0)
@@ -307,6 +336,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.initStartButtons()
         self.initBuildButtons()
         self.initTestButtons()
+        self.initMakeButtons()
 
     #create the environment for the start screen
     def initStartEnviron(self):
@@ -351,7 +381,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def initBuildMode(self, path):
         self.initEnviron()
-        self.placeTerrain(*self.getTerrainLists(path  ))
+        self.placeTerrain(*self.getTerrainLists(path))
+        #make sure bed beams selected
+        self.beamButtons.select("Bed")
+        self.buildType = BridgeBed
+
         self.undoQue = []
         self.redoQue = []
 
@@ -363,10 +397,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.onMouseReleased(event)
         self.redrawAll()
 
-    def buildMouseReleased(self, event):
+    #handles mouse relesed whenever it is a construction mode
+    def constructMouseReleased(self, event):
         if(self.tempNode != None):
             #check if the beam is too long
-            if(self.tempConstraint.getLength() < self.maxBeamLen):
+            if(self.mode == "make" or 
+               self.tempConstraint.getLength() < self.maxBeamLen):
                 selection = self.environ.getClickedObj(event.x, event.y)
                 if(selection != None and isinstance(selection, Node)):
                     #if the original node was ended on then delete 
@@ -377,6 +413,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
                         self.undoQue.append((self.buildType(self.startNode, 
                                             selection, self.breakRatio, 
                                             self.environ),))
+                    elif(self.mode == "make" and len(self.startNode.constraints) == 0):
+                        self.startNode.delete()
 
                 else:
                     self.tempNode.visible = True
@@ -389,21 +427,37 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.startNode = None
             self.redoQue = []
 
+    def onBuildMouseReleased(self, event):
+        self.constructMouseReleased(event)
+
+    def onMakeMouseReleased(self, event):
+        self.constructMouseReleased(event)
+
     def onMouseReleased(self, event):
         if(self.mode == "build"):
-            self.buildMouseReleased(event)
+            self.onBuildMouseReleased(event)
+        elif(self.mode == "make"):
+            self.onMakeMouseReleased(event)
 
-    def buildMouseDrag(self, event):
+    def constructMouseDrag(self, event):
         if(self.tempNode != None):
             self.tempNode.position = self.environ.getVect(event.x, event.y)
-            if(self.tempConstraint.getLength() > self.maxBeamLen):
+            if(self.tempConstraint.getLength() > self.maxBeamLen and self.mode != "make"):
                 self.tempConstraint.color = "red"
             else:
                 self.tempConstraint.color = self.tempConstraint.baseColor
 
+    def onBuildMouseDrag(self, event):
+        self.constructMouseDrag(event)
+
+    def onMakeMouseDrag(self, event):
+        self.constructMouseDrag(event)
+
     def onMouseDrag(self, event):
         if(self.mode == "build"):
-           self.buildMouseDrag(event) 
+            self.onBuildMouseDrag(event)
+        elif(self.mode == "make"):
+            self.onMakeMouseDrag(event)
 
     def updateBeamButtons(self, event):
         self.beamButtons.update(event.x, event.y)
@@ -434,16 +488,14 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         return buttonId != None
 
-    def buildMousePressed(self, event):
-        self.updateBeamButtons(event)
-
-        #if none of the buttons clicked, then check if the bridge was being
-        #built
-        if(not self.checkBuildButtons(event)):
-            selection = self.environ.getClickedObj(event.x, event.y)
-            if(isinstance(selection, Node)):
+    #construct a bridge or terrain
+    def constructMousePressed(self, event):
+        selection = self.environ.getClickedObj(event.x, event.y)
+        pos = self.environ.getVect(event.x, event.y)
+        if(self.buildType != Node):
+            #if it is a node that can be selected
+            if(isinstance(selection, Node) and selection.color == "black"):
                 if(self.tempConstraint == None):
-                    pos = self.environ.getVect(event.x, event.y)
                     #make new node/constraint
                     self.startNode = selection
                     self.tempNode = Node(pos, self.nodeMass, self.environ,
@@ -452,6 +504,27 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                                      self.tempNode,
                                                      self.breakRatio, 
                                                      self.environ)
+            elif(self.mode == "make"):
+                pos = self.environ.getVect(event.x, event.y)
+                #create a new startNode, tempNode, and constraint
+                self.startNode = Node(pos, self.nodeMass, self.environ,
+                                      True, True)
+                self.tempNode = Node(pos, self.nodeMass, self.environ,
+                                     True, False)
+                self.tempConstraint = self.buildType(self.startNode,
+                                                     self.tempNode,
+                                                     self.breakRatio,
+                                                     self.environ)
+        else:
+            self.undoQue.append((Node(pos, self.nodeMass, self.environ, True, True, "brown"),))
+
+    def onBuildMousePressed(self, event):
+        self.updateBeamButtons(event)
+
+        #if none of the buttons clicked, then check if the bridge was being
+        #built
+        if(not self.checkBuildButtons(event)):
+            self.constructMousePressed(event)
 
     def checkTestButtons(self, event):
         buttonId = self.checkButtonList(self.testButtons, event)
@@ -486,11 +559,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
         if(not self.isGameOver):
             self.score += 1
 
-    def testMousePressed(self, event):
+    def onTestMousePressed(self, event):
         if(not self.checkTestButtons(event)):
             self.addWeight(event)
 
-    def startMousePressed(self, event):
+    def onStartMousePressed(self, event):
         buttonId = self.checkButtonList(self.startButtons, event)
 
         if(buttonId == "Play"):
@@ -502,7 +575,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         else:
             self.addWeight(event)
 
-    def pickMousePressed(self, event):
+    def onPickMousePressed(self, event):
         buttonId = self.checkButtonList(self.levelButtons, event)
 
         if(buttonId != None):
@@ -510,21 +583,76 @@ class PhysModuleDemo(EventBasedAnimationClass):
         else:
             self.addWeight(event)
 
+    def updateTerrainButtons(self, event):
+        self.terrainButtons.update(event.x, event.y)
+        if(self.terrainButtons.selectedId == "Land"):
+            self.buildType = LandBeam
+        elif(self.terrainButtons.selectedId == "Node"):
+            self.buildType = Node
+
+    def saveTerrain(self):
+        terrainNodes = []
+        constraints = []
+        startNodes = []
+        for obj in self.environ.objects:
+            if(isinstance(obj, Node)):
+                if(obj.color == "black"):
+                    terrainNodes.append(obj.position.getXY())
+                else:
+                    startNodes.append(obj.position.getXY())
+
+        #go through constraints and find their nodes
+        for index in self.environ.constraintIndexes:
+            constraint = self.environ.objects[index]
+            (node1, node2) = (constraint.nodes[0], constraint.nodes[1])
+            node1Pos = node1.position.getXY() 
+            node2Pos = node2.position.getXY()
+            nodeIndexes = [-1, -1]
+            for i in xrange(len(terrainNodes)):
+                if(terrainNodes[i] == node1Pos):
+                    nodeIndexes[0] = terrainNodes[i]
+                elif(terrainNodes[i] == node2Pos):
+                    nodeIndexes[1] = terrainNodes[i]
+            constraints.append(tuple(nodeIndexes))
+
+        fileContents = str(terrainNodes) + str(constraints) + str(startNodes)
+
+        path = "levels" + os.sep + "level_untitled.txt"
+        writeFile(path, fileContents)
+        assert(os.path.exists(path))
+
+    def onMakeMousePressed(self, event):
+        selectedButton = self.terrainButtons.selectedId
+        self.updateTerrainButtons(event)
+        #check other buttons only if terrain buttons not clicked
+        if(selectedButton == self.terrainButtons.selectedId):
+            buttonId = self.checkButtonList(self.makeButtons, event)
+            if(buttonId == "Quit"):
+                self.gotoStartMode()
+            elif(buttonId == "Save"):
+                self.saveTerrain()
+            else:
+                self.constructMousePressed(event)
+
     def onMousePressed(self, event):
         if(self.mode == "build"):
-            self.buildMousePressed(event)
+            self.onBuildMousePressed(event)
         elif(self.mode == "test"):
-            self.testMousePressed(event)
+            self.onTestMousePressed(event)
         elif(self.mode == "start"):
-            self.startMousePressed(event)
+            self.onStartMousePressed(event)
         elif(self.mode == "pick"):
-            self.pickMousePressed(event)
+            self.onPickMousePressed(event)
+        elif(self.mode == "make"):
+            self.onMakeMousePressed(event)
 
     def gotoMakeMode(self):
         self.mode = "make"
+        self.terrainButtons.select("Land")
         self.buildType = LandBeam
         self.initEnviron()
-
+        self.undoQue = []
+        self.redoQue = []
 
     def gotoStartMode(self):
         self.mode = "start"
@@ -573,11 +701,18 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def undoMove(self):
         if(len(self.undoQue) > 0):
-            objToRemove = self.undoQue.pop()
+            objToRemove = list(self.undoQue.pop())
+            #check if both nodes of the constraint should be deleted
+            for obj in objToRemove:
+                if(isinstance(obj, Constraint)):
+                    for node in obj.nodes:
+                        if(node not in objToRemove and len(node.constraints) == 1):
+                            objToRemove.append(node)
+
             for obj in objToRemove:
                 self.environ.deleteObj(obj, obj.environIndex)
 
-            self.redoQue.append(objToRemove)
+            self.redoQue.append(tuple(objToRemove))
 
     def redoMove(self):
         if(len(self.redoQue) > 0):
@@ -586,6 +721,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
                 obj.environIndex = self.environ.add(obj)
 
             self.undoQue.append(objToAdd)
+
+    def switchDebug(self):
+        self.debug = not self.debug
+        self.environ.debug = not self.environ.debug
 
     def onBuildKeyPress(self, event):
         if(event.keysym == "c"):
@@ -599,6 +738,15 @@ class PhysModuleDemo(EventBasedAnimationClass):
         elif(event.keysym == "r"):
             self.redoMove()
 
+    def onMakeKeyPress(self, event):
+        if(event.keysym == "u"):
+            self.undoMove()
+        elif(event.keysym == "r"):
+            self.redoMove()
+        elif(event.keysym == "d"):
+            self.switchDebug()
+
+
     def onKeyPressed(self, event):
         if(event.keysym == "h" or event.keysym == "question"):
             self.isHelpShown = not self.isHelpShown
@@ -608,6 +756,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.onTestKeyPress(event)
         elif(self.mode == "build"):
             self.onBuildKeyPress(event)
+        elif(self.mode == "make"):
+            self.onMakeKeyPress(event)
 
     def onTimerFiredWrapper(self):
         if(self.timerDelay == None): return
@@ -726,6 +876,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.drawButtons(self.levelButtons)
 
+    def drawMakeScreen(self):
+        self.terrainButtons.draw(self.canvas)
+        self.drawButtons(self.makeButtons)
+
     def drawGame(self):
         if(self.isHelpShown):
             self.drawHelpScreen()
@@ -740,6 +894,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.drawTestScreen()
         elif(self.mode == "pick"):
             self.drawPickScreen()
+        elif(self.mode == "make"):
+            self.drawMakeScreen()
 
     def redrawAll(self):
         self.canvas.delete(ALL)
