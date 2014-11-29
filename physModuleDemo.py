@@ -5,7 +5,19 @@ import time
 import copy
 import os
 
-#handles buttons
+#also from notes, #reads from a file
+def readFile(filename, mode="rt"):
+    # rt = "read text"
+    with open(filename, mode) as fin:
+        return fin.read()
+
+#again, from notes, writes to a file
+def writeFile(filename, contents, mode="wt"):
+    # wt = "write text"
+    with open(filename, mode) as fout:
+        fout.write(contents)
+
+#handles buttons (from HW 8/9 (the one with farm game))
 class Button(object):
     #creates a button at x, y of specified dimensions with the given text and
     #color. selectedColor is what color the button is when selected.
@@ -138,6 +150,34 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.selectedNode = nodes[2]
         self.selectedNodeForce = Vector(0, 0)
+
+    #takes a list of tuples in text form and converts it to a regular list
+    #assumes it is a list of tuples
+    def textToList(self, text):
+        #remove all spaces
+        text = text.replace(" ", "")
+
+        #remove parens around tuples and brackets around list
+        text = text.replace("(", "")
+        text = text.replace(")", "")
+        text = text.replace("[", "")
+        text = text.replace("]", "")
+
+        numList = text.split(",")
+
+        finalList = []
+        for i in xrange(0, len(numList), 2):
+            finalList.append((float(numList[i]), float(numList[i+1])))
+
+        return finalList
+
+    def getTerrainLists(self, path):
+        text = readFile(path)
+        newLineIndex = text.find("\n")
+        nodeList = self.listToText(text[:newLineIndex])
+        constraintList = self.listToText(text[newLineIndex + 1:])
+
+        return (nodeList, constraintList)
 
     def placeTerrain(self, nodePoints, constraintIndexes):
         nodePoints = [(0, 8.5), (5,8.5), (5, 7), (15, 8.5), (15, 7), (25, 8.5), (5, 0), (15, 0)]
@@ -277,8 +317,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def initBuildMode(self):
         self.initEnviron()
-        self.placeTerrain(None, None)
+        self.placeTerrain(*self.getTerrainLists("terrain.txt"))
         self.placeStartNodes()
+        self.undoQue = []
+        self.redoQue = []
 
     def onMouseDragWrapper(self, event):
         self.onMouseDrag(event)
@@ -299,17 +341,20 @@ class PhysModuleDemo(EventBasedAnimationClass):
                     #only make new constraint if the start node 
                     #wasn't ended on
                     if(not (selection == self.startNode)):
-                        self.buildType(self.startNode, selection, 
-                                       self.breakRatio, self.environ)
+                        self.undoQue.append((self.buildType(self.startNode, 
+                                            selection, self.breakRatio, 
+                                            self.environ)))
 
                 else:
                     self.tempNode.visible = True
+                    self.undoQue.append((self.tempConstraint, self.tempNode))
             else:
                 self.tempNode.delete()
             #reset temp variables
             self.tempConstraint = None
             self.tempNode = None
             self.startNode = None
+            self.redoQue = []
 
     def onMouseReleased(self, event):
         if(self.mode == "build"):
@@ -426,6 +471,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.mode = "build"
         if(self.buildEnviron != None):
             self.environ = self.buildEnviron
+            #clear out ques
+            self.undoQue = []
+            self.redoQue = []
         else:
             self.initBuildMode()
         self.isGameOver = False
@@ -450,13 +498,33 @@ class PhysModuleDemo(EventBasedAnimationClass):
         elif(event.keysym == "p"):
             self.environ.pause()
 
+    def undoMove(self):
+        if(len(self.undoQue) > 0):
+            objToRemove = self.undoQue.pop()
+            for obj in objToRemove:
+                self.environ.deleteObj(obj, obj.environIndex)
+
+            self.redoQue.append(objToRemove)
+
+    def redoMove(self):
+        if(len(self.redoQue) > 0):
+            objToAdd = self.redoQue.pop()
+            for obj in objToAdd:
+                obj.environIndex = self.environ.add(obj)
+
+            self.undoQue.append(objToAdd)
+
     def onBuildKeyPress(self, event):
-        if(event.keysym == "r"):
+        if(event.keysym == "c"):
             self.restartLevel()
         elif(event.keysym == "s"):
             self.gotoTestMode()
         elif(event.keysym == "d"):
-            self.switchDebug()     
+            self.switchDebug()
+        elif(event.keysym == "u"):
+            self.undoMove()
+        elif(event.keysym == "r"):
+            self.redoMove()
 
     def onKeyPressed(self, event):
         if(event.keysym == "h" or event.keysym == "question"):
@@ -593,5 +661,15 @@ class PhysModuleDemo(EventBasedAnimationClass):
         if(self.debug): self.drawDebug()
         self.drawGame()
 
+def testTextToList():
+    print "Testing textToList...",
+    c = PhysModuleDemo()
+    text = "[(1, 3), (3, 5), (1, 3), (1, 4)]"
+    print c.textToList(text)
+    assert(c.textToList(text) == eval(text))
+    print "...passed!"
+
+#testTextToList()
 demo = PhysModuleDemo(1250, 750)
+
 demo.run()
