@@ -610,12 +610,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
             nodeIndexes = [-1, -1]
             for i in xrange(len(terrainNodes)):
                 if(terrainNodes[i] == node1Pos):
-                    nodeIndexes[0] = terrainNodes[i]
+                    nodeIndexes[0] = i
                 elif(terrainNodes[i] == node2Pos):
-                    nodeIndexes[1] = terrainNodes[i]
+                    nodeIndexes[1] = i
             constraints.append(tuple(nodeIndexes))
 
-        fileContents = str(terrainNodes) + str(constraints) + str(startNodes)
+        fileContents = str(terrainNodes) + "\n" + str(constraints) + "\n" + str(startNodes)
 
         path = "levels" + os.sep + "level_untitled.txt"
         writeFile(path, fileContents)
