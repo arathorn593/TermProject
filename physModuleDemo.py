@@ -88,8 +88,6 @@ class ToggleButtons(object):
                 button.selected = True
                 self.selectedId = identifier
 
-
-
 class PhysModuleDemo(EventBasedAnimationClass):
     def initEnviron(self):
         self.screenConversion = 50 #pixels/meter
@@ -124,8 +122,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def placeBridge(self):
         nodes = []
-        nodePoints = [(2, 5, True), (4, 5), (6, 5), (8, 5), (10, 5, True), 
-                      (9, 7), (7, 7), (5, 7), (3, 7)]
+        #x and y of the middle of the bridge bed
+        x = float(self.width/self.screenConversion)/2
+        y = 2
+        nodePoints = [(x-4, y, True),(x-2, y), (x, y), (x+2, y),(x+4, y, True),
+                      (x-3, y+2), (x-1, y+2), (x+1, y+2), (x+3, y+2)]
 
         for point in nodePoints:
             if(len(point) == 3):
@@ -138,18 +139,19 @@ class PhysModuleDemo(EventBasedAnimationClass):
                               True))
 
         #indexes of the two nodes (in list "nodes")
-        constraintIndexes = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
-                             (6, 7), (7, 8), (8, 0), (7, 1), (1, 8), (7, 2),
-                             (2, 6), (6, 3), (3, 5)]
+        bedIndexes = [(0, 1), (1, 2), (2, 3), (3, 4)] 
+        beamIndexes = [(0, 5), (5, 1), (1, 6), (6, 2), (2, 7), (7, 3), (3, 8),
+                       (8, 4), (5, 6), (6, 7), (7, 8)]
 
-        constraints = []
-        for indexes in constraintIndexes:
+        for indexes in bedIndexes:
             (node1Index, node2Index) = indexes
-            constraints.append(BridgeBed(nodes[node1Index],nodes[node2Index], 
-                                          self.breakRatio, self.environ))
+            BridgeBed(nodes[node1Index],nodes[node2Index], self.breakRatio, 
+                      self.environ)
 
-        self.selectedNode = nodes[2]
-        self.selectedNodeForce = Vector(0, 0)
+        for indexes in beamIndexes:
+            (node1Index, node2Index) = indexes
+            BridgeBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, 
+                      self.environ)
 
     #takes a list of tuples in text form and converts it to a regular list
     #assumes it is a list of tuples
@@ -167,36 +169,47 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         finalList = []
         for i in xrange(0, len(numList), 2):
-            finalList.append((float(numList[i]), float(numList[i+1])))
+            if("." in numList[i]): num1 = float(numList[i])
+            else: num1 = int(numList[i])
+
+            if("." in numList[i+1]): num2 = float(numList[i+1])
+            else: num2 = int(numList[i+1])
+
+            finalList.append((num1, num2))
 
         return finalList
 
     def getTerrainLists(self, path):
+        #which line the lists are on in the file
+        nodeListLineIndex = 0
+        constraintListLineIndex = 1
+        startNodeListLineIndex = 2
+
         text = readFile(path)
-        newLineIndex = text.find("\n")
-        nodeList = self.listToText(text[:newLineIndex])
-        constraintList = self.listToText(text[newLineIndex + 1:])
+        text = text.splitlines()
 
-        return (nodeList, constraintList)
+        nodeList = self.textToList(text[nodeListLineIndex])
+        constraintList = self.textToList(text[constraintListLineIndex])
+        startNodeList = self.textToList(text[startNodeListLineIndex])
 
-    def placeTerrain(self, nodePoints, constraintIndexes):
-        nodePoints = [(0, 8.5), (5,8.5), (5, 7), (15, 8.5), (15, 7), (25, 8.5), (5, 0), (15, 0)]
+        return (nodeList, constraintList, startNodeList)
 
+    def placeTerrain(self, nodePoints, constraintIndexes, startNodes):
+        print "nodePoints = %s\nconstraintIndexes = %s" % (nodePoints, constraintIndexes)
         nodes = []
         for point in nodePoints:
             (x, y) = point
             nodes.append(Node(Vector(x, y),self.nodeMass,self.environ,True,
                               False))
 
-        constraintIndexes = [(0, 1), (1, 2), (2, 6), (3, 4), (4, 7), (3, 5)]
         constraints = []
         for indexes in constraintIndexes:
             (node1Index, node2Index) = indexes
             constraints.append(LandBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, self.environ))
 
-    def placeStartNodes(self):
-        nodePoints = [(5,8.5), (5, 7), (15, 8.5), (15, 7)]
-        
+        self.placeStartNodes(startNodes)
+
+    def placeStartNodes(self, nodePoints):
         for point in nodePoints:
             (x, y) = point
             self.selectedNode = Node(Vector(x, y), self.nodeMass, 
@@ -206,16 +219,16 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def initStartButtons(self):
         buttonWidth = 300
-        buttonHeight = 100
+        buttonHeight = 75
         buttonMargin = 10
 
         x = self.width/2 - buttonWidth/2
         y = self.height / 3
 
         xIncrement = 0
-        yIncrement = buttonMargin + buttonHeight
+        yIncrement = buttonHeight
 
-        buttonIds = ["Play", "Help"]
+        buttonIds = ["Play", "Make Level", "Help"]
         self.startButtons = []
         for identifier in buttonIds:
             self.startButtons.append(Button(x, y, buttonWidth, 
@@ -226,6 +239,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
             x += xIncrement
             y += yIncrement 
 
+    def initMakeButtons(self):
+        pass
 
     def initBuildButtons(self):
         (x, y) = (0, 0)
@@ -246,11 +261,16 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.beamButtons = ToggleButtons(buttons)
         self.beamButtons.select("Bed")
 
-        self.buildButtons.append(Button(x, y, self.buttonWidth, 
-                                        self.buttonHeight,
-                                        self.buttonMargin, "Test", 
-                                        self.buttonColor,
-                                        self.buttonSelectedColor, "Test"))
+        otherButtons = ["Test", "Menu"]
+        for identifier in otherButtons:
+            self.buildButtons.append(Button(x, y, self.buttonWidth, 
+                                            self.buttonHeight, 
+                                            self.buttonMargin, identifier, 
+                                            self.buttonColor, 
+                                            self.buttonSelectedColor, 
+                                            identifier))
+            x += xIncrement
+            y += yIncrement
 
     def initTestButtons(self):
         (x, y) = (0, 0)
@@ -261,7 +281,21 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                        self.buttonColor,
                                        self.buttonSelectedColor, "Build"))
 
+    def initLevelButtons(self):
+        width = 300
+        height = 75
+        margin = 15
+        color = "light green"
+        (x, y) = (0, self.height/5)
+        yInc = height
 
+        self.levelButtons = []
+        for level in self.levelList:
+            #path is the identifier, name is the text on the button
+            (path, name) = level
+            self.levelButtons.append(Button(x, y, width, height, margin, name, 
+                                            color, color, path))
+            y += yInc
 
     def initButtons(self):
         self.buttonMargin = 5
@@ -315,10 +349,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.isHelpShown = False
 
-    def initBuildMode(self):
+    def initBuildMode(self, path):
         self.initEnviron()
-        self.placeTerrain(*self.getTerrainLists("terrain.txt"))
-        self.placeStartNodes()
+        self.placeTerrain(*self.getTerrainLists(path  ))
         self.undoQue = []
         self.redoQue = []
 
@@ -343,7 +376,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
                     if(not (selection == self.startNode)):
                         self.undoQue.append((self.buildType(self.startNode, 
                                             selection, self.breakRatio, 
-                                            self.environ)))
+                                            self.environ),))
 
                 else:
                     self.tempNode.visible = True
@@ -396,6 +429,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         if(buttonId == "Test"):
             self.gotoTestMode()
+        elif(buttonId == "Menu"):
+            self.initAnimation()
 
         return buttonId != None
 
@@ -426,6 +461,23 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         return (buttonId != None)
 
+    def initLevelList(self):
+        path = "levels"
+        prefixLen = 6 #prefix to each file is level_
+        postfixLen = 4 #len of file extension
+        self.levelList = []
+        for fileName in os.listdir(path):
+            filePath = path + os.sep + fileName
+            if(not os.path.isdir(filePath) and fileName[:prefixLen]=="level_"):
+                self.levelList.append((filePath, 
+                                       fileName[prefixLen:-postfixLen]))
+
+    def gotoPickMode(self):
+        self.mode = "pick"
+        self.initLevelList()
+        #so buttons are most updated
+        self.initLevelButtons()
+
     #add a weight to the environment and increment score if needed
     def addWeight(self, event):
         pos = self.environ.getVect(event.x, event.y)
@@ -442,9 +494,19 @@ class PhysModuleDemo(EventBasedAnimationClass):
         buttonId = self.checkButtonList(self.startButtons, event)
 
         if(buttonId == "Play"):
-            self.gotoBuildMode()
+            self.gotoPickMode()
         elif(buttonId == "Help"):
             self.isHelpShown = True
+        elif(buttonId == "Make Level"):
+            self.gotoMakeMode()
+        else:
+            self.addWeight(event)
+
+    def pickMousePressed(self, event):
+        buttonId = self.checkButtonList(self.levelButtons, event)
+
+        if(buttonId != None):
+            self.gotoBuildMode(buttonId)
         else:
             self.addWeight(event)
 
@@ -455,6 +517,14 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.testMousePressed(event)
         elif(self.mode == "start"):
             self.startMousePressed(event)
+        elif(self.mode == "pick"):
+            self.pickMousePressed(event)
+
+    def gotoMakeMode(self):
+        self.mode = "make"
+        self.buildType = LandBeam
+        self.initEnviron()
+
 
     def gotoStartMode(self):
         self.mode = "start"
@@ -467,15 +537,18 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.buildEnviron = copy.deepcopy(self.environ)
         self.environ.start()
 
-    def gotoBuildMode(self):
+    #go to build mode with the terrain in the file at the given path
+    def gotoBuildMode(self, path=None):
         self.mode = "build"
         if(self.buildEnviron != None):
             self.environ = self.buildEnviron
             #clear out ques
             self.undoQue = []
             self.redoQue = []
+        elif(path != None):
+            self.initBuildMode(path)
         else:
-            self.initBuildMode()
+            raise Exception("no level to load D:")
         self.isGameOver = False
         self.score = 0
 
@@ -561,7 +634,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
 
     def onTimerFired(self):
-        if(self.mode == "test" or self.mode == "start"):
+        if(self.mode == "test" or self.mode == "start" or self.mode == "pick"):
             #the number of objects that left the bottom of the screen
             bottomObjCount = self.environ.update(self.dt,
                                                  self.width, self.height)
@@ -643,6 +716,16 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.canvas.create_text(x, y, text=text, font=font, anchor=N)
             y += lineHeight
 
+    def drawButtons(self, buttons):
+        for button in buttons:
+            button.draw(self.canvas)
+
+    def drawPickScreen(self):
+        self.canvas.create_text(0, 0, text="Pick a Level", anchor=NW, 
+                           font="Arial 40 bold")
+
+        self.drawButtons(self.levelButtons)
+
     def drawGame(self):
         if(self.isHelpShown):
             self.drawHelpScreen()
@@ -655,6 +738,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.drawBuildScreen()
         elif(self.mode == "test"):
             self.drawTestScreen()
+        elif(self.mode == "pick"):
+            self.drawPickScreen()
 
     def redrawAll(self):
         self.canvas.delete(ALL)
@@ -664,12 +749,17 @@ class PhysModuleDemo(EventBasedAnimationClass):
 def testTextToList():
     print "Testing textToList...",
     c = PhysModuleDemo()
-    text = "[(1, 3), (3, 5), (1, 3), (1, 4)]"
+    text = "[(1, 3), (3, 0), (1, 3), (1, 4)]"
     print c.textToList(text)
     assert(c.textToList(text) == eval(text))
     print "...passed!"
 
-#testTextToList()
-demo = PhysModuleDemo(1250, 750)
+def testInitLevelList():
+    print "Testing initLevelList...",
+    c = PhysModuleDemo()
+    c.initLevelList()
+    assert(c.levelList == [("levels\\level_1.txt", "1"), 
+                           ("levels\\level_terrain.txt", "terrain")])
 
+demo = PhysModuleDemo(1250, 750)
 demo.run()
