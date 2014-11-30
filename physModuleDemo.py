@@ -705,12 +705,17 @@ class PhysModuleDemo(EventBasedAnimationClass):
         return bedNodes
 
     def gotoTestMode(self):
-        self.mode = "test"
-        self.score = 0
-        self.testForce = 0
-        self.buildEnviron = copy.deepcopy(self.environ)
-        self.bedNodes = self.getBedNodeList()
-        self.environ.start()
+        if(self.environ.doesBridgeCover(self.width)):
+            print "bridge covers"
+            self.mode = "test"
+            self.score = 0
+            self.testForce = 0
+            self.buildEnviron = copy.deepcopy(self.environ)
+            self.bedNodes = self.getBedNodeList()
+            self.environ.start()
+        else:
+            print "bridge does not cover"
+            #alert box
 
     def gotoPlayMode(self):
         self.mode = "play"

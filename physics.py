@@ -213,6 +213,54 @@ class PhysEnvironment(object):
         edgeList.sort()
         return edgeList
 
+    #returns the leftmost node connected to a collidable constraint
+    def getLeftCollidableNode(self):
+        leftObj = None
+        leftmostX = None
+        for obj in self.objects:
+            if(isinstance(obj, Node)):
+                x = obj.position.getXY()[0]
+                if(leftmostX == None or x < leftmostX):
+                    #only assign if there is a collidable constraint on the obj
+                    for constraint in obj.constraints:
+                        if(constraint.isCollidable):
+                            leftmostX = x
+                            leftObj = obj
+                            break
+        return leftObj
+
+    #is there a path from the given constraint to the right side
+    def isCovered(self, node, width, seen=None):
+        if(seen == None):
+            seen = set()
+        seen.add(node)
+        if(node.position.getXY()[0] >= width):
+            return True
+        elif(node in seen):
+            return False
+        else:
+            for constraint in node.constraints:
+                #get the other node in the constraint
+                if(constraint.nodes[0] is node):
+                    newNode = constraint.nodes[1]
+                else:
+                    newNode = constraint.nodes[0]
+                if(constraint.isCollidable and 
+                   self.isCovered(newNode, width, seen)):
+                    return True
+            return False                    
+
+
+    def doesBridgeCover(self, screenWidth):
+        #list of all collidable constraints with (leftX, rightX)
+        leftNode = self.getLeftCollidableNode()
+        #object starts to the right of the left side
+        if(leftNode.position.getXY()[0] > 0):
+            print "left node not left of 0"
+            return False
+        environWidth = self.getEnvironScalar(screenWidth)
+        return self.isCovered(leftNode, environWidth)
+
     #I came up with an initial rough version of this algorith, but
     # my roomate helped me get it to this point
     def resolveCollisions(self):
@@ -427,6 +475,9 @@ class Node(PhysObject):
         self.r = 10
         self.color = color
         self.visible = visible
+
+    def __hash__(self):
+        return hash(str(self.position.getXY()) + self.color)
 
     def update(self, dt, width, height):
         if(not self.isFixed):
@@ -722,13 +773,15 @@ class Constraint(object):
     def getEdges(self):
         i = self.environIndex
 
-        (x0, y0) = self.nodes[0].position.getXY()
-        (x1, y1) = self.nodes[1].position.getXY()
-
-        xLeft = x0 if x0 < x1 else x1
-        xRight = x0 if x0 > x1 else x1
+        (xLeft, xRight) = self.getSortedXVals()
 
         return [(xLeft, i, "L"), (xRight, i, "R")]
+
+    def getSortedXVals(self):
+        xVals = [self.nodes[0].position.getXY()[0], 
+                 self.nodes[1].position.getXY()[0]]
+        xVals.sort()
+        return tuple(xVals)
 
 
     def isClicked(self, screenX, screenY):
