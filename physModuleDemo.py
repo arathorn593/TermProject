@@ -1,6 +1,7 @@
 from eventBasedAnimationClass import EventBasedAnimationClass
 from physics import *
 from Tkinter import *
+import tkMessageBox
 import time
 import copy
 import os
@@ -323,11 +324,15 @@ class PhysModuleDemo(EventBasedAnimationClass):
         width = 300
         height = 75
         margin = 15
-        color = "light green"
-        (x, y) = (0, self.height/5)
+        menuColor = "blue"
+        color = "green"
+        (x, y) = (0, self.height/8)
         yInc = height
 
         self.levelButtons = []
+        self.levelButtons.append(Button(x, y, width, height, margin, "Menu",
+                                        menuColor, menuColor, "Menu"))
+        y += yInc
         for level in self.levelList:
             #path is the identifier, name is the text on the button
             (path, name) = level
@@ -396,6 +401,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
         #the force applied to each no-movable node in connected to a bridge bed
         self.testForce = 0
         self.testForceIncrement = 100
+
+        #one is largest text, two is second largest, etc
+        self.titleWeight = 1
+        self.subTitleWeight = 2
+        self.normTextWeight = 3
 
     def getLevelName(self, path):
         key = self.levelPrefix
@@ -609,7 +619,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def onPickMousePressed(self, event):
         buttonId = self.checkButtonList(self.levelButtons, event)
 
-        if(buttonId != None):
+        if(buttonId == "Menu"):
+            self.gotoStartMode()
+        elif(buttonId != None):
             self.gotoBuildMode(buttonId)
         else:
             self.addWeight(event)
@@ -719,7 +731,6 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def gotoTestMode(self):
         if(self.environ.doesBridgeCover(self.width)):
-            print "bridge covers"
             self.mode = "test"
             self.score = 0
             self.testForce = 0
@@ -727,8 +738,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.bedNodes = self.getBedNodeList()
             self.environ.start()
         else:
-            print "bridge does not cover"
-            #alert box
+            message = "Your bridge does not span the gap"
+            title = "Invalid Bridge"
+            tkMessageBox.showerror(title, message)
 
     def gotoPlayMode(self):
         self.mode = "play"
@@ -762,7 +774,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def onStartKeyPress(self, event):
         if(event.keysym == "space" or event.keysym == "s"):
-            self.gotoBuildMode()
+            self.gotoPickMode()
+        elif(event.keysym == "d"):
+            self.switchDebug()
 
     def onTestKeyPress(self, event):
         if(event.keysym == "b"):
@@ -796,7 +810,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
                 self.redoQue.append(self.undoColorChange(objToRemove))
             else:
                 for obj in objToRemove:
-                    self.environ.deleteObj(obj, obj.environIndex)
+                    obj.delete()
 
                 self.redoQue.append(tuple(objToRemove))
 
@@ -971,11 +985,25 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.drawLevelName()
 
+    #draw a list of tuples (text, weight) where 1 is the largest text and 
+    #3 is the smallest
+    def drawWeightedText(self, x, y, textList):
+        for weightedLine in textList:
+            (text, weight) = weightedLine
+            if(weight == 1): 
+                font = "Arial 30 bold"
+                lineHeight = 70
+            elif(weight == 2):
+                font = "Arial 20 bold"
+                lineHeight = 40
+            elif(weight == 3):
+                font = "Arial 15"
+                lineHeight = 25
+
+            self.canvas.create_text(x, y, text=text, font=font, anchor=N)
+            y += lineHeight
+
     def drawHelpScreen(self):
-        #one is largest text, two is second largest, etc
-        title = 1
-        subTitle = 2
-        normText = 3
 
         #list of tuples ("text", textSize)
         helpText = [("Help", title), 
@@ -991,22 +1019,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
                      normText), ("Test Screen", subTitle),
                     ("Click to drop a weight onto the bridge", normText)]
 
-        startHeight = 30
-        (x, y) = (self.width/2, startHeight)
-        for line in helpText:
-            (text, weight) = line
-            if(weight == 1): 
-                font = "Arial 30 bold"
-                lineHeight = 70
-            elif(weight == 2):
-                font = "Arial 20 bold"
-                lineHeight = 40
-            elif(weight == 3):
-                font = "Arial 15"
-                lineHeight = 25
-
-            self.canvas.create_text(x, y, text=text, font=font, anchor=N)
-            y += lineHeight
+        
 
     def drawButtons(self, buttons):
         for button in buttons:

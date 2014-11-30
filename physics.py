@@ -206,8 +206,6 @@ class PhysEnvironment(object):
         edgeList = []
 
         for obj in self.objects:
-            #if(isinstance(obj, Weight)):
-            #    print obj.getEdges()
             edgeList += obj.getEdges()
 
         edgeList.sort()
@@ -272,23 +270,13 @@ class PhysEnvironment(object):
         #the list of objects that could be colliding
         objList = []
         for edge in edgeList:
-            '''
-            if(self.debug):
-                print "edge = (%d, %s)" % (edge[1], edge[2])
-                print "objList before = [",
-                for obj in objList:
-                    print "%d," % obj.environIndex,
-                print "]"
-                '''
             (x, i, side) = edge
             if(side == "L"):
                 newObj = self.objects[i]
                 if(len(objList) > 0):
                     if(isinstance(newObj, Weight)):
-                        '''if(self.debug): print "new obj is a weight"'''
                         newObj.fixCollisions(objList)
                     else:
-                        '''if(self.debug): print "new obj is not a weight"'''
                         for i in xrange(len(objList)):
                             if(isinstance(objList[i], Weight)):
                                 objList[i].fixCollisions([newObj])
@@ -299,13 +287,6 @@ class PhysEnvironment(object):
                     if(objList[index].environIndex == i):
                         objList.pop(index)
                         break
-            '''
-            if(self.debug):
-                print "objList after = [",
-                for obj in objList:
-                    print "%d," % obj.environIndex,
-                print "]"
-                '''
 
     #update each object in the list, assume each is a physObject
     #returns true if a constraint broke, false otherwise
@@ -319,10 +300,6 @@ class PhysEnvironment(object):
                 #resolve constraints
                 for index in self.constraintIndexes:
                     self.objects[index].resolve()
-
-                #stop adjusting if all collisions fixed
-                #print fixedCollisions
-                #if(not self.resolveCollisions()): break
 
             objToDelete = []
             #once constraints and collisions handled, update objects
@@ -517,7 +494,7 @@ class Node(PhysObject):
         if(self.visible):
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
         if(debug):
-            canvas.create_text(x, y, text=self.environIndex, fill="white")
+            canvas.create_text(x, y, text=len(self.constraints), fill="white")
 
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked
