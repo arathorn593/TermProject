@@ -4,6 +4,7 @@ from Tkinter import *
 import time
 import copy
 import os
+import string
 
 #also from notes, #reads from a file
 def readFile(filename, mode="rt"):
@@ -178,11 +179,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         return finalList
 
-    def getTerrainLists(self, path):
+    def getLevelInfo(self, path):
         #which line the lists are on in the file
         nodeListLineIndex = 0
         constraintListLineIndex = 1
         startNodeListLineIndex = 2
+        highScoreIndex = 3
 
         text = readFile(path)
         text = text.splitlines()
@@ -190,11 +192,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
         nodeList = self.textToList(text[nodeListLineIndex])
         constraintList = self.textToList(text[constraintListLineIndex])
         startNodeList = self.textToList(text[startNodeListLineIndex])
+        highScore = text[highScoreIndex]
 
-        return (nodeList, constraintList, startNodeList)
+        return (nodeList, constraintList, startNodeList, highScore)
 
-    def placeTerrain(self, nodePoints, constraintIndexes, startNodes):
-        print "nodePoints = %s\nconstraintIndexes = %s" % (nodePoints, constraintIndexes)
+    def prepareLevel(self, nodePoints, constraintIndexes,startNodes,highScore):
         nodes = []
         for point in nodePoints:
             (x, y) = point
@@ -207,6 +209,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
             constraints.append(LandBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, self.environ))
 
         self.placeStartNodes(startNodes)
+        self.highScore = int(highScore)
 
     def placeStartNodes(self, nodePoints):
         for point in nodePoints:
@@ -262,7 +265,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.terrainButtons = ToggleButtons(toggleList)
 
-        makeButtonIdList = ["Save", "Quit"]
+        makeButtonIdList = ["Save", "Name", "Quit"]
         self.makeButtons = self.getButtonList(x, y+yInc*2, xInc, yInc, 
                                               self.buttonWidth, 
                                               self.buttonHeight, 
@@ -379,9 +382,20 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.isHelpShown = False
 
+        self.levelFolder = "levels"
+        self.levelPrefix = "level_"
+
+    def getLevelName(self, path):
+        key = self.levelPrefix
+        keyIndex = path.find(key)
+        levelIndex = keyIndex + len(key)
+        fileExtensionLen = 4 #.txt
+        return path[levelIndex:-fileExtensionLen]
+
     def initBuildMode(self, path):
         self.initEnviron()
-        self.placeTerrain(*self.getTerrainLists(path))
+        self.levelName = self.getLevelName(path)
+        self.prepareLevel(*self.getLevelInfo(path))
         #make sure bed beams selected
         self.beamButtons.select("Bed")
         self.buildType = BridgeBed
@@ -535,13 +549,13 @@ class PhysModuleDemo(EventBasedAnimationClass):
         return (buttonId != None)
 
     def initLevelList(self):
-        path = "levels"
+        path = self.levelFolder
         prefixLen = 6 #prefix to each file is level_
         postfixLen = 4 #len of file extension
         self.levelList = []
         for fileName in os.listdir(path):
             filePath = path + os.sep + fileName
-            if(not os.path.isdir(filePath) and fileName[:prefixLen]=="level_"):
+            if(not os.path.isdir(filePath) and fileName[:prefixLen]==self.levelPrefix):
                 self.levelList.append((filePath, 
                                        fileName[prefixLen:-postfixLen]))
 
@@ -594,6 +608,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         terrainNodes = []
         constraints = []
         startNodes = []
+        highScore = 0
         for obj in self.environ.objects:
             if(isinstance(obj, Node)):
                 if(obj.color == "black"):
@@ -615,9 +630,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
                     nodeIndexes[1] = i
             constraints.append(tuple(nodeIndexes))
 
-        fileContents = str(terrainNodes) + "\n" + str(constraints) + "\n" + str(startNodes)
+        fileContents = str(terrainNodes) + "\n" + str(constraints) + "\n" + str(startNodes) + "\n" + str(highScore)
 
-        path = "levels" + os.sep + "level_untitled.txt"
+        fileName = self.levelPrefix + self.levelName + ".txt"
+        path = self.levelFolder + os.sep + fileName
         writeFile(path, fileContents)
         assert(os.path.exists(path))
 
@@ -631,6 +647,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
                 self.gotoStartMode()
             elif(buttonId == "Save"):
                 self.saveTerrain()
+            elif(buttonId == "Name"):
+                self.isNaming = not self.isNaming
             else:
                 self.constructMousePressed(event)
 
@@ -648,6 +666,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def gotoMakeMode(self):
         self.mode = "make"
+        self.levelName = "untitled"
+        self.isNaming = False
         self.terrainButtons.select("Land")
         self.buildType = LandBeam
         self.initEnviron()
@@ -685,7 +705,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.gotoBuildMode()
 
     def restartSim(self):
-        self.gotoTestMode()
+        self.environ = self.buildEnviron
+        self.environ.start()
+        self.score = 0
+        self.isGameOver = False
 
     def onStartKeyPress(self, event):
         if(event.keysym == "space" or event.keysym == "s"):
@@ -738,14 +761,22 @@ class PhysModuleDemo(EventBasedAnimationClass):
         elif(event.keysym == "r"):
             self.redoMove()
 
-    def onMakeKeyPress(self, event):
-        if(event.keysym == "u"):
-            self.undoMove()
-        elif(event.keysym == "r"):
-            self.redoMove()
-        elif(event.keysym == "d"):
-            self.switchDebug()
+    def onNamingKeyPress(self, event):
+        if(event.keysym == "BackSpace" and len(self.levelName) > 0):
+            self.levelName = self.levelName[:-1]
+        elif(event.keysym in string.printable):
+            self.levelName += event.keysym
 
+    def onMakeKeyPress(self, event):
+        if(self.isNaming):
+            self.onNamingKeyPress(event)
+        else:
+            if(event.keysym == "u"):
+                self.undoMove()
+            elif(event.keysym == "r"):
+                self.redoMove()
+            elif(event.keysym == "d"):
+                self.switchDebug()
 
     def onKeyPressed(self, event):
         if(event.keysym == "h" or event.keysym == "question"):
@@ -783,6 +814,20 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
 
+    def updateHighScore(self, newScore):
+        filePath = (self.levelFolder + os.sep + self.levelPrefix + 
+                    self.levelName + ".txt")
+        highScoreIndex = 3
+
+        contents = readFile(filePath)
+        contents = contents.splitlines()
+        #update high schore
+        self.highScore = self.score
+        contents[highScoreIndex] = str(self.highScore)
+        contents = "\n".join(contents)
+
+        writeFile(filePath, contents)
+
     def onTimerFired(self):
         if(self.mode == "test" or self.mode == "start" or self.mode == "pick"):
             #the number of objects that left the bottom of the screen
@@ -790,6 +835,11 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                                  self.width, self.height)
             if(bottomObjCount > 0 and self.mode == "test"): 
                 self.isGameOver = True
+                if(self.score > self.highScore):
+                    self.gameOverText = "New High Score!"
+                    self.updateHighScore(self.score)
+                else:
+                    self.gameOverText = "Game Over"
 
     def drawDebug(self):
         #unit square for scale
@@ -801,13 +851,19 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
     def drawGameOver(self):
         (x, y) = (self.width/2, self.height/2)
-        self.canvas.create_text(x, y, text="GAME OVER", font="Arial 30 bold",
-                                fill="black")
+        self.canvas.create_text(x, y, text=self.gameOverText, 
+                                font="Arial 30 bold", fill="black")
 
     def drawScore(self):
         (x, y) = (self.width, 0)
+        lineHeight = 30
+        scoreText = "Score: %d" % self.score
+        highScoreText = "HighScore: %d" % self.highScore
 
-        self.canvas.create_text(x, y, text=self.score, font="Arial 15 bold",
+        self.canvas.create_text(x, y, text=scoreText, font="Arial 15 bold",
+                                fill="black", anchor=NE)
+        y += lineHeight
+        self.canvas.create_text(x, y, text=highScoreText, font="Arial 15 bold",
                                 fill="black", anchor=NE)
 
     def drawStartScreen(self):
@@ -818,16 +874,25 @@ class PhysModuleDemo(EventBasedAnimationClass):
         for button in self.startButtons:
             button.draw(self.canvas)
 
+    def drawLevelName(self, color="black"):
+        (x, y) = (self.buttonWidth, 0)
+        self.canvas.create_text(x, y, text=self.levelName, anchor=NW, 
+                           font="Arial 30 bold", fill=color)
+
     def drawBuildScreen(self):
         self.beamButtons.draw(self.canvas)
         for button in self.buildButtons:
             button.draw(self.canvas)
+
+        self.drawLevelName()
 
     def drawTestScreen(self):
         if(self.isGameOver): self.drawGameOver()
         self.drawScore()
         for button in self.testButtons:
             button.draw(self.canvas)
+
+        self.drawLevelName()
 
     def drawHelpScreen(self):
         #one is largest text, two is second largest, etc
@@ -879,6 +944,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def drawMakeScreen(self):
         self.terrainButtons.draw(self.canvas)
         self.drawButtons(self.makeButtons)
+        if(self.isNaming):
+            self.drawLevelName("blue")
+        else:
+            self.drawLevelName()
 
     def drawGame(self):
         if(self.isHelpShown):
