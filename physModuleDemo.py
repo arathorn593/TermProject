@@ -293,7 +293,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.beamButtons = ToggleButtons(buttons)
         self.beamButtons.select("Bed")
 
-        otherButtons = ["Test", "Menu"]
+        otherButtons = ["Test", "Play", "Menu"]
         for identifier in otherButtons:
             self.buildButtons.append(Button(x, y, self.buttonWidth, 
                                             self.buttonHeight, 
@@ -384,6 +384,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.levelFolder = "levels"
         self.levelPrefix = "level_"
+
+        #the force applied to each no-movable node in connected to a bridge bed
+        self.testForce = 0
+        self.testForceIncrement = 100
 
     def getLevelName(self, path):
         key = self.levelPrefix
@@ -495,10 +499,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def checkBuildButtons(self, event):
         buttonId = self.checkButtonList(self.buildButtons, event)
 
-        if(buttonId == "Test"):
-            self.gotoTestMode()
+        if(buttonId == "Play"):
+            self.gotoPlayMode()
         elif(buttonId == "Menu"):
             self.initAnimation()
+        elif(buttonId == "Test"):
+            self.gotoTestMode()
 
         return buttonId != None
 
@@ -570,10 +576,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
         pos = self.environ.getVect(event.x, event.y)
 
         Weight(pos, self.nodeMass*10, self.environ)
-        if(not self.isGameOver):
-            self.score += 1
 
-    def onTestMousePressed(self, event):
+    def onPlayMousePressed(self, event):
         if(not self.checkTestButtons(event)):
             self.addWeight(event)
 
@@ -648,21 +652,28 @@ class PhysModuleDemo(EventBasedAnimationClass):
             elif(buttonId == "Save"):
                 self.saveTerrain()
             elif(buttonId == "Name"):
-                self.isNaming = not self.isNaming
+                self.isNaming = not self.isNaming 
             else:
                 self.constructMousePressed(event)
+
+    def onTestMousePressed(self, event):
+        if(not self.checkTestButtons(event)):
+            self.testForce += self.testForceIncrement
+            self.score += 1
 
     def onMousePressed(self, event):
         if(self.mode == "build"):
             self.onBuildMousePressed(event)
-        elif(self.mode == "test"):
-            self.onTestMousePressed(event)
+        elif(self.mode == "play"):
+            self.onPlayMousePressed(event)
         elif(self.mode == "start"):
             self.onStartMousePressed(event)
         elif(self.mode == "pick"):
             self.onPickMousePressed(event)
         elif(self.mode == "make"):
             self.onMakeMousePressed(event)
+        elif(self.mode == "test"):
+            self.onTestMousePressed(event)
 
     def gotoMakeMode(self):
         self.mode = "make"
@@ -679,9 +690,30 @@ class PhysModuleDemo(EventBasedAnimationClass):
         self.initStartEnviron()
         self.environ.start()
 
+    #go through all objects in the environment and find all nodes
+    #connected to a bridge beam. return them as a list
+    def getBedNodeList(self):
+        bedNodes = []
+        for obj in self.environ.objects:
+            if(isinstance(obj, Node) and not obj.isFixed):
+                #now check if it has a bed beam
+                for beam in obj.constraints:
+                    if(isinstance(beam, BridgeBed)):
+                        bedNodes.append(obj)
+                        break
+
+        return bedNodes
+
     def gotoTestMode(self):
         self.mode = "test"
         self.score = 0
+        self.testForce = 0
+        self.buildEnviron = copy.deepcopy(self.environ)
+        self.bedNodes = self.getBedNodeList()
+        self.environ.start()
+
+    def gotoPlayMode(self):
+        self.mode = "play"
         self.buildEnviron = copy.deepcopy(self.environ)
         self.environ.start()
 
@@ -726,11 +758,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
         if(len(self.undoQue) > 0):
             objToRemove = list(self.undoQue.pop())
             #check if both nodes of the constraint should be deleted
-            for obj in objToRemove:
-                if(isinstance(obj, Constraint)):
-                    for node in obj.nodes:
-                        if(node not in objToRemove and len(node.constraints) == 1):
-                            objToRemove.append(node)
+            if(self.mode == "make"):
+                for obj in objToRemove:
+                    if(isinstance(obj, Constraint)):
+                        for node in obj.nodes:
+                            if(node not in objToRemove and len(node.constraints) == 1):
+                                objToRemove.append(node)
 
             for obj in objToRemove:
                 self.environ.deleteObj(obj, obj.environIndex)
@@ -753,7 +786,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         if(event.keysym == "c"):
             self.restartLevel()
         elif(event.keysym == "s"):
-            self.gotoTestMode()
+            self.gotoPlayMode()
         elif(event.keysym == "d"):
             self.switchDebug()
         elif(event.keysym == "u"):
@@ -783,7 +816,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.isHelpShown = not self.isHelpShown
         elif(self.mode == "start"):
             self.onStartKeyPress(event)
-        elif(self.mode == "test"):
+        elif(self.mode == "play"):
             self.onTestKeyPress(event)
         elif(self.mode == "build"):
             self.onBuildKeyPress(event)
@@ -829,11 +862,16 @@ class PhysModuleDemo(EventBasedAnimationClass):
         writeFile(filePath, contents)
 
     def onTimerFired(self):
-        if(self.mode == "test" or self.mode == "start" or self.mode == "pick"):
-            #the number of objects that left the bottom of the screen
-            bottomObjCount = self.environ.update(self.dt,
-                                                 self.width, self.height)
-            if(bottomObjCount > 0 and self.mode == "test"): 
+        if(self.mode in ["play", "start", "pick", "test"]):
+            #add force to all bed Nodes if the game isn't over
+            if(self.mode == "test" and not self.isGameOver):
+                for node in self.bedNodes:
+                    node.addForce(Vector(0, -self.testForce))
+
+            #if anything
+            isBroken = self.environ.update(self.dt, self.width, self.height)
+            
+            if(isBroken and self.mode == "test"): 
                 self.isGameOver = True
                 if(self.score > self.highScore):
                     self.gameOverText = "New High Score!"
@@ -889,6 +927,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
     def drawTestScreen(self):
         if(self.isGameOver): self.drawGameOver()
         self.drawScore()
+        for button in self.testButtons:
+            button.draw(self.canvas)
+
+        self.drawLevelName()
+
+    def drawPlayScreen(self):
         for button in self.testButtons:
             button.draw(self.canvas)
 
@@ -959,12 +1003,14 @@ class PhysModuleDemo(EventBasedAnimationClass):
             self.drawStartScreen()
         if(self.mode == "build"):
             self.drawBuildScreen()
-        elif(self.mode == "test"):
-            self.drawTestScreen()
+        elif(self.mode == "play"):
+            self.drawPlayScreen()
         elif(self.mode == "pick"):
             self.drawPickScreen()
         elif(self.mode == "make"):
             self.drawMakeScreen()
+        elif(self.mode == "test"):
+            self.drawTestScreen()
 
     def redrawAll(self):
         self.canvas.delete(ALL)

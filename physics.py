@@ -211,12 +211,6 @@ class PhysEnvironment(object):
             edgeList += obj.getEdges()
 
         edgeList.sort()
-        #print the edge list for debuging
-        if(self.debug):
-            print "edgeList = [",
-            for edge in edgeList:
-                print edge[1],
-            print "]"
         return edgeList
 
     #I came up with an initial rough version of this algorith, but
@@ -229,22 +223,23 @@ class PhysEnvironment(object):
         #the list of objects that could be colliding
         objList = []
         for edge in edgeList:
+            '''
             if(self.debug):
                 print "edge = (%d, %s)" % (edge[1], edge[2])
                 print "objList before = [",
                 for obj in objList:
                     print "%d," % obj.environIndex,
                 print "]"
-
+                '''
             (x, i, side) = edge
             if(side == "L"):
                 newObj = self.objects[i]
                 if(len(objList) > 0):
                     if(isinstance(newObj, Weight)):
-                        if(self.debug): print "new obj is a weight"
+                        '''if(self.debug): print "new obj is a weight"'''
                         newObj.fixCollisions(objList)
                     else:
-                        if(self.debug): print "new obj is not a weight"
+                        '''if(self.debug): print "new obj is not a weight"'''
                         for i in xrange(len(objList)):
                             if(isinstance(objList[i], Weight)):
                                 objList[i].fixCollisions([newObj])
@@ -255,15 +250,16 @@ class PhysEnvironment(object):
                     if(objList[index].environIndex == i):
                         objList.pop(index)
                         break
-
+            '''
             if(self.debug):
                 print "objList after = [",
                 for obj in objList:
                     print "%d," % obj.environIndex,
                 print "]"
+                '''
 
     #update each object in the list, assume each is a physObject
-    #returns the number of objects that left the bottom of the screen
+    #returns true if a constraint broke, false otherwise
     def update(self, dt, width, height):
         if(self.isSimulating):
             for iteration in xrange(self.resolveIterations):
@@ -279,7 +275,6 @@ class PhysEnvironment(object):
                 #print fixedCollisions
                 #if(not self.resolveCollisions()): break
 
-            objExitingBottom = 0
             objToDelete = []
             #once constraints and collisions handled, update objects
             for index in self.otherIndexes + self.weightIndexes:
@@ -288,8 +283,6 @@ class PhysEnvironment(object):
                     #check if the object exited the bottom
                     (x, y) = self.getScreenXY(self.objects[index].position)
 
-                    if(y > height):
-                        objExitingBottom += 1
                     #delete the object either way
                     if(not isinstance(self.objects[index], Node)):
                         objToDelete.append(self.objects[index])
@@ -297,7 +290,13 @@ class PhysEnvironment(object):
             for obj in objToDelete:
                 obj.delete()
 
-            return objExitingBottom
+            #check for broken constraints
+            for index in self.constraintIndexes:
+                isBroken = self.objects[index].checkForBreak()
+                if(isBroken and isinstance(self.objects[index], BridgeBed)):
+                    return True
+
+            return False
         
 
     #draw all the objects in the simulation
@@ -487,8 +486,8 @@ class Weight(PhysObject):
         self.color = "orange"
         #the proportion of the collision distance that the weight moves
         #the lower this is, the heavier the weights seem
-        self.collisionRatio = 0.4
-        self.frictionCoef = 0.01
+        self.collisionRatio = 0.25
+
         super(Weight, self).__init__(*args)
 
     #collision resolution algorithm adapted from:
@@ -541,6 +540,8 @@ class Weight(PhysObject):
                 #if the weight is over the constaint
                 if(cosTheta0 > 0 and cosTheta1 > 0):
                     projection = nodeWeightVect.projOnto(constraintVect)
+                    projLen = projection.getMag()
+                    constraintLen = constraintVect.getMag() 
                     #vector perpendicular to constraint to center of ball
                     perpVect = projection - nodeWeightVect
                     dist = perpVect.getMag()
@@ -661,6 +662,9 @@ class Constraint(object):
         #create new nodes on the ends of the constraint so that it 
         #is freed. only create new constraints if there are other constraints
         #on that node or if the node is fixed
+        if(self.environ.debug): 
+            print "constraint %d is broken" % self.environIndex
+            self.color = "black"
         for i in xrange(len(self.nodes)):
             node = self.nodes[i]
             if(len(node.constraints) > 1 or node.isFixed):
@@ -679,14 +683,19 @@ class Constraint(object):
     def resolve(self):
         self.updateInfo()
 
-        if(self.lenRatio > self.breakRatio):
+        #shift the nodes to fix the constraints
+        if(not self.nodes[0].isFixed):
+            self.nodes[0].position += self.nodeVect*0.5*self.lenRatio
+        if(not self.nodes[1].isFixed):
+            self.nodes[1].position -= self.nodeVect*0.5*self.lenRatio
+
+    def checkForBreak(self):
+        self.updateInfo()
+        if(abs(self.lenRatio) > self.breakRatio):
             self.breakConstraint()
+            return True
         else:
-            #shift the nodes to fix the constraints
-            if(not self.nodes[0].isFixed):
-                self.nodes[0].position += self.nodeVect*0.5*self.lenRatio
-            if(not self.nodes[1].isFixed):
-                self.nodes[1].position -= self.nodeVect*0.5*self.lenRatio
+            return False
 
     def delete(self):
         #remove constraint from nodes
