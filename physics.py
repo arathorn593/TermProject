@@ -213,32 +213,33 @@ class PhysEnvironment(object):
         edgeList.sort()
         return edgeList
 
-    #returns the leftmost node connected to a collidable constraint
-    def getLeftCollidableNode(self):
-        leftObj = None
-        leftmostX = None
+    #returns a list of the nodes left  of the screens edge
+    def getLeftCollidableNodes(self, leftScreenEdge):
+        leftNodes = []
         for obj in self.objects:
             if(isinstance(obj, Node)):
                 x = obj.position.getXY()[0]
-                if(leftmostX == None or x < leftmostX):
+                if(x < leftScreenEdge):
                     #only assign if there is a collidable constraint on the obj
                     for constraint in obj.constraints:
                         if(constraint.isCollidable):
-                            leftmostX = x
-                            leftObj = obj
+                            leftNodes.append(obj)
                             break
-        return leftObj
+        return leftNodes
 
     #is there a path from the given constraint to the right side
-    def isCovered(self, node, width, seen=None):
+    def isCovered(self, node, width, seen=None, depth=0):
+        if(self.debug):
+            print "   " * depth + str(node.environIndex)
+            print "   "*depth + str(seen)
         if(seen == None):
             seen = set()
-        seen.add(node)
         if(node.position.getXY()[0] >= width):
             return True
         elif(node in seen):
             return False
         else:
+            seen.add(node)
             for constraint in node.constraints:
                 #get the other node in the constraint
                 if(constraint.nodes[0] is node):
@@ -246,20 +247,20 @@ class PhysEnvironment(object):
                 else:
                     newNode = constraint.nodes[0]
                 if(constraint.isCollidable and 
-                   self.isCovered(newNode, width, seen)):
+                   self.isCovered(newNode, width, seen, depth+1)):
                     return True
             return False                    
 
 
     def doesBridgeCover(self, screenWidth):
         #list of all collidable constraints with (leftX, rightX)
-        leftNode = self.getLeftCollidableNode()
-        #object starts to the right of the left side
-        if(leftNode.position.getXY()[0] > 0):
-            print "left node not left of 0"
-            return False
+        leftNodes = self.getLeftCollidableNodes(leftScreenEdge=0)
+
         environWidth = self.getEnvironScalar(screenWidth)
-        return self.isCovered(leftNode, environWidth)
+        for node in leftNodes:
+            if(self.isCovered(node, environWidth)):
+                return True
+        return False
 
     #I came up with an initial rough version of this algorith, but
     # my roomate helped me get it to this point
@@ -516,7 +517,7 @@ class Node(PhysObject):
         if(self.visible):
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
         if(debug):
-            canvas.create_text(x, y, text=len(self.constraints), fill="white")
+            canvas.create_text(x, y, text=self.environIndex, fill="white")
 
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked

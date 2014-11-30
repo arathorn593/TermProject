@@ -153,8 +153,6 @@ class PhysModuleDemo(EventBasedAnimationClass):
             BridgeBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, 
                       self.environ)
 
-    #takes a list of tuples in text form and converts it to a regular list
-    #assumes it is a list of tuples
     def textToList(self, text):
         #remove all spaces
         text = text.replace(" ", "")
@@ -167,15 +165,21 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         numList = text.split(",")
 
+        for i in xrange(len(numList)):
+            if("." in numList[i]):
+                numList[i] = float(numList[i])
+            else:
+                numList[i] = int(numList[i])
+
+        return numList
+
+    #takes a list of tuples in text form and converts it to a regular list
+    #assumes it is a list of tuples
+    def textToTupleList(self, text):
+        numList = self.textToList(text)
         finalList = []
         for i in xrange(0, len(numList), 2):
-            if("." in numList[i]): num1 = float(numList[i])
-            else: num1 = int(numList[i])
-
-            if("." in numList[i+1]): num2 = float(numList[i+1])
-            else: num2 = int(numList[i+1])
-
-            finalList.append((num1, num2))
+            finalList.append((numList[i], numList[i+1]))
 
         return finalList
 
@@ -189,8 +193,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
         text = readFile(path)
         text = text.splitlines()
 
-        nodeList = self.textToList(text[nodeListLineIndex])
-        constraintList = self.textToList(text[constraintListLineIndex])
+        nodeList = self.textToTupleList(text[nodeListLineIndex])
+        constraintList = self.textToTupleList(text[constraintListLineIndex])
         startNodeList = self.textToList(text[startNodeListLineIndex])
         highScore = text[highScoreIndex]
 
@@ -208,7 +212,9 @@ class PhysModuleDemo(EventBasedAnimationClass):
             (node1Index, node2Index) = indexes
             constraints.append(LandBeam(nodes[node1Index],nodes[node2Index], self.breakRatio, self.environ))
 
-        self.placeStartNodes(startNodes)
+        for index in startNodes:
+            nodes[index].visible = True
+
         self.highScore = int(highScore)
 
     def placeStartNodes(self, nodePoints):
@@ -384,6 +390,8 @@ class PhysModuleDemo(EventBasedAnimationClass):
 
         self.levelFolder = "levels"
         self.levelPrefix = "level_"
+        self.fixedNodeColor = "brown"
+        self.nodeColor = "black"
 
         #the force applied to each no-movable node in connected to a bridge bed
         self.testForce = 0
@@ -514,7 +522,7 @@ class PhysModuleDemo(EventBasedAnimationClass):
         pos = self.environ.getVect(event.x, event.y)
         if(self.buildType != Node):
             #if it is a node that can be selected
-            if(isinstance(selection, Node) and selection.color == "black"):
+            if(isinstance(selection, Node)):
                 if(self.tempConstraint == None):
                     #make new node/constraint
                     self.startNode = selection
@@ -536,7 +544,12 @@ class PhysModuleDemo(EventBasedAnimationClass):
                                                      self.breakRatio,
                                                      self.environ)
         else:
-            self.undoQue.append((Node(pos, self.nodeMass, self.environ, True, True, "brown"),))
+            if(isinstance(selection, Node)):
+                self.undoQue.append((selection.color, selection))
+                selection.color = self.fixedNodeColor
+            else:
+                self.undoQue.append((Node(pos, self.nodeMass, self.environ, True, True, self.fixedNodeColor),))
+
 
     def onBuildMousePressed(self, event):
         self.updateBeamButtons(event)
@@ -615,10 +628,10 @@ class PhysModuleDemo(EventBasedAnimationClass):
         highScore = 0
         for obj in self.environ.objects:
             if(isinstance(obj, Node)):
-                if(obj.color == "black"):
-                    terrainNodes.append(obj.position.getXY())
-                else:
-                    startNodes.append(obj.position.getXY())
+                terrainNodes.append(obj.position.getXY())
+                if(obj.color == self.fixedNodeColor):
+                    nodeIndex = len(terrainNodes) - 1
+                    startNodes.append(nodeIndex)
 
         #go through constraints and find their nodes
         for index in self.environ.constraintIndexes:
@@ -759,6 +772,14 @@ class PhysModuleDemo(EventBasedAnimationClass):
         elif(event.keysym == "p"):
             self.environ.pause()
 
+    #undos a color change (color is what the obj origionally was) and returns
+    #what should be added to the other que
+    def undoColorChange(self, colorTuple):
+        (oldColor, obj) = colorTuple
+        newColor = obj.color
+        obj.color = oldColor
+        return (newColor, obj)
+
     def undoMove(self):
         if(len(self.undoQue) > 0):
             objToRemove = list(self.undoQue.pop())
@@ -770,18 +791,25 @@ class PhysModuleDemo(EventBasedAnimationClass):
                             if(node not in objToRemove and len(node.constraints) == 1):
                                 objToRemove.append(node)
 
-            for obj in objToRemove:
-                self.environ.deleteObj(obj, obj.environIndex)
+            #check if it is a color change
+            if(type(objToRemove[0]) == str):
+                self.redoQue.append(self.undoColorChange(objToRemove))
+            else:
+                for obj in objToRemove:
+                    self.environ.deleteObj(obj, obj.environIndex)
 
-            self.redoQue.append(tuple(objToRemove))
+                self.redoQue.append(tuple(objToRemove))
 
     def redoMove(self):
         if(len(self.redoQue) > 0):
             objToAdd = self.redoQue.pop()
-            for obj in objToAdd:
-                obj.environIndex = self.environ.add(obj)
+            if(type(objToAdd[0]) == str):
+                self.undoQue.append(self.undoColorChange(objToAdd))
+            else:
+                for obj in objToAdd:
+                    obj.environIndex = self.environ.add(obj)
 
-            self.undoQue.append(objToAdd)
+                self.undoQue.append(objToAdd)
 
     def switchDebug(self):
         self.debug = not self.debug
