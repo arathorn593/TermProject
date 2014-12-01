@@ -313,7 +313,7 @@ class PyBridge(EventBasedAnimationClass):
         self.beamButtons.select("Bed")
 
         #set up other build buttons
-        otherIds = ["Test", "Play", "Menu"]
+        otherIds = ["Test", "Play", "Clear", "Menu"]
         self.buildButtons = self.getButtonList(x, y+yInc*len(buttonIds), 
                                                xInc, yInc, self.buttonWidth, 
                                                self.buttonHeight, 
@@ -380,57 +380,76 @@ class PyBridge(EventBasedAnimationClass):
         self.initEnviron()
         self.placeBridge()
 
-    #initialize the animation constants and such
-    def initAnimation(self):
-        #constants for nodes/springs
-        self.nodeMass = 10 #kg
-        self.forceIncrement = 100 #how much the mass increases on a click
-        self.breakRatio = 0.05
-
-        self.gotoStartMode()
-
+    def initTimingConstants(self):
         self.dt = 1/30.0 #seconds (30 fps (for physics simulation))
         self.timerDelay = 10
 
         self.startTime = time.time()
         self.fps = 0
 
+    def initPhysConstants(self):
+        #constants for nodes/springs
+        self.nodeMass = 10 #kg
+        self.forceIncrement = 100 #how much the mass increases on a click
+        self.breakRatio = 0.05
+
+    #initialize variables used in the game
+    def initGameVariables(self):
         self.tempConstraint = None
         self.tempNode = None
         self.startNode = None
-
-        self.root.bind("<B1-ButtonRelease>", 
-                       lambda event: self.onMouseReleasedWrapper(event))
-
-        self.root.bind("<B1-Motion>", lambda event: 
-                       self.onMouseDragWrapper(event))
 
         self.debug = False
         self.isGameOver = False
 
         self.score = 0
 
-        self.initButtons()
-        self.buildType = BridgeBed
-        self.maxBeamLen = 3
+        #type of object to build with
+        self.buildType = None
         self.buildEnviron = None
-
         self.isHelpShown = False
+        #the total force applied to the movable bridge bed nodes
+        self.testForce = 0
+
+        #path to the level file
+        self.levelPath = None
+
+    #initialize constants used in the game
+    def initGameConstants(self):
+        self.initButtons()
+        
+        self.maxBeamLen = 3        
 
         self.levelFolder = "levels"
         self.levelPrefix = "level_"
         self.fixedNodeColor = "brown"
         self.nodeColor = "black"
 
-        #the force applied to each no-movable node in connected to a bridge bed
-        self.testForce = 0
-        self.testForceIncrement = 100
+        #how much self.testForce is increased each click
+        self.testForceIncrement = 250
 
         #one is largest text, two is second largest, etc
         self.titleWeight = 1
         self.subTitleWeight = 2
         self.normTextWeight = 3
 
+    #initialize the animation constants and such
+    def initAnimation(self):
+        self.initPhysConstants()
+
+        self.gotoStartMode()
+
+        self.initTimingConstants()
+
+        self.initGameConstants()
+        self.initGameVariables()
+
+        self.root.bind("<B1-ButtonRelease>", 
+                       lambda event: self.onMouseReleasedWrapper(event))
+
+        self.root.bind("<B1-Motion>", lambda event: 
+                       self.onMouseDragWrapper(event))
+        
     #returns the level name of the level file at the given path
     def getLevelName(self, path):
         #key is the begining of the level file name
@@ -444,7 +463,8 @@ class PyBridge(EventBasedAnimationClass):
         return path[levelIndex:-fileExtensionLen]
 
     #initialize build mode
-    def initBuildMode(self, path):
+    def initBuildMode(self, path=None):
+        if(path==None): path = self.levelPath
         self.initEnviron()
         self.levelName = self.getLevelName(path)
         self.prepareLevel(*self.getLevelInfo(path))
@@ -464,28 +484,33 @@ class PyBridge(EventBasedAnimationClass):
         self.onMouseReleased(event)
         self.redrawAll()
 
+    #place the constraint in the tempconstraint variable
+    #create new end node if need be
+    def placeTempConstraint(self, event):
+        selection = self.environ.getClickedObj(event.x, event.y)
+        if(selection != None and isinstance(selection, Node)):
+            #if the original node was ended on then delete 
+            self.tempNode.delete()
+            #only make new constraint if the start node 
+            #wasn't ended on
+            if(not (selection == self.startNode)):
+                self.undoQue.append((self.buildType(self.startNode, 
+                                    selection, self.breakRatio, 
+                                    self.environ),))
+            elif(self.mode == "make" and len(self.startNode.constraints) == 0):
+                self.startNode.delete()
+
+        else:
+            self.tempNode.visible = True
+            self.undoQue.append((self.tempConstraint, self.tempNode))
+
     #handles mouse relesed whenever it is a construction mode
     def constructMouseReleased(self, event):
         if(self.tempNode != None):
             #check if the beam is too long
             if(self.mode == "make" or 
                self.tempConstraint.getLength() < self.maxBeamLen):
-                selection = self.environ.getClickedObj(event.x, event.y)
-                if(selection != None and isinstance(selection, Node)):
-                    #if the original node was ended on then delete 
-                    self.tempNode.delete()
-                    #only make new constraint if the start node 
-                    #wasn't ended on
-                    if(not (selection == self.startNode)):
-                        self.undoQue.append((self.buildType(self.startNode, 
-                                            selection, self.breakRatio, 
-                                            self.environ),))
-                    elif(self.mode == "make" and len(self.startNode.constraints) == 0):
-                        self.startNode.delete()
-
-                else:
-                    self.tempNode.visible = True
-                    self.undoQue.append((self.tempConstraint, self.tempNode))
+                self.placeTempConstraint(event)
             else:
                 self.tempNode.delete()
             #reset temp variables
@@ -571,41 +596,54 @@ class PyBridge(EventBasedAnimationClass):
             self.initAnimation()
         elif(buttonId == "Test"):
             self.gotoTestMode()
+        elif(buttonId == "Clear"):
+            self.initBuildMode()
 
         return buttonId != None
 
+    #makes a new constraint, taking into account if a node was selected and
+    #which node was selected (selection)
+    #also, where the click happened (pos(used for creating the object))
+    def makeNewConstraint(self, selection, pos):
+        #if it is a node that can be selected
+        if(isinstance(selection, Node)):
+            if(self.tempConstraint == None):
+                #make new node/constraint
+                self.startNode = selection
+                self.tempNode = Node(pos, self.nodeMass, self.environ,
+                                     False, False)
+                self.tempConstraint = self.buildType(self.startNode, 
+                                                 self.tempNode,
+                                                 self.breakRatio, 
+                                                 self.environ)
+        elif(self.mode == "make"):
+            #if in make mode, create a whole new constraint, even if
+            #no node was clicked to start at
+
+            #create a new startNode, tempNode, and constraint
+            self.startNode = Node(pos, self.nodeMass, self.environ,
+                                  True, True)
+            self.tempNode = Node(pos, self.nodeMass, self.environ,
+                                 True, False)
+            self.tempConstraint = self.buildType(self.startNode,
+                                                 self.tempNode,
+                                                 self.breakRatio,
+                                                 self.environ)
+
     #construct a bridge or terrain
     def constructMousePressed(self, event):
+        #what was clicked
         selection = self.environ.getClickedObj(event.x, event.y)
         pos = self.environ.getVect(event.x, event.y)
         if(self.buildType != Node):
-            #if it is a node that can be selected
-            if(isinstance(selection, Node)):
-                if(self.tempConstraint == None):
-                    #make new node/constraint
-                    self.startNode = selection
-                    self.tempNode = Node(pos, self.nodeMass, self.environ,
-                                         False, False)
-                    self.tempConstraint = self.buildType(self.startNode, 
-                                                     self.tempNode,
-                                                     self.breakRatio, 
-                                                     self.environ)
-            elif(self.mode == "make"):
-                pos = self.environ.getVect(event.x, event.y)
-                #create a new startNode, tempNode, and constraint
-                self.startNode = Node(pos, self.nodeMass, self.environ,
-                                      True, True)
-                self.tempNode = Node(pos, self.nodeMass, self.environ,
-                                     True, False)
-                self.tempConstraint = self.buildType(self.startNode,
-                                                     self.tempNode,
-                                                     self.breakRatio,
-                                                     self.environ)
-        else:
+            self.makeNewConstraint(selection, pos)
+        elif(self.mode == "make"):
+            #if a node was selected, change it to a fixed node
             if(isinstance(selection, Node)):
                 self.undoQue.append((selection.color, selection))
                 selection.color = self.fixedNodeColor
             else:
+                #otherwise, create a new fixed node
                 self.undoQue.append((Node(pos, self.nodeMass, self.environ, True, True, self.fixedNodeColor),))
 
     #handles mouse pressed events in build mode
@@ -681,6 +719,7 @@ class PyBridge(EventBasedAnimationClass):
         if(buttonId == "Menu"):
             self.gotoStartMode()
         elif(buttonId != None):
+            self.levelPath = buttonId
             self.gotoBuildMode(buttonId)
         else:
             self.addWeight(event)
@@ -695,7 +734,7 @@ class PyBridge(EventBasedAnimationClass):
         elif(self.terrainButtons.selectedId == "Node"):
             self.buildType = Node
 
-
+    #save the terrain in the make mode to a file
     def saveTerrain(self):
         terrainNodes = []
         constraints = []
@@ -962,16 +1001,6 @@ class PyBridge(EventBasedAnimationClass):
         self.onTimerFired()
         self.redrawAll()
 
-        endTime = time.time()
-        timeDif = endTime - self.startTime
-
-        frameRemaining = int((self.dt - timeDif) * 1000)
-        
-        #print "timeDif = %.5f dt = %.5f remaining = %.2f" % (timeDif, 
-        #                                              self.dt, frameRemaining)
-
-        self.timerDelay = 10#max(frameRemaining, 1)
-
         self.canvas.after(self.timerDelay, self.onTimerFiredWrapper)
 
     #write the new high score to the level file
@@ -993,8 +1022,9 @@ class PyBridge(EventBasedAnimationClass):
         if(self.mode in ["play", "start", "pick", "test"]):
             #add force to all bed Nodes if the game isn't over
             if(self.mode == "test" and not self.isGameOver):
+                nodeForce = -1*float(self.testForce)/len(self.bedNodes)
                 for node in self.bedNodes:
-                    node.addForce(Vector(0, -self.testForce))
+                    node.addForce(Vector(0, nodeForce))
 
             #if any BridgeBed broke
             isBroken = self.environ.update(self.dt, self.width, self.height)
