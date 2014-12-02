@@ -1,4 +1,5 @@
 from physics import *
+from pyBridge import PyBridge
 
 def testVectorClass():
     print "Testing Vector Class...",
@@ -59,9 +60,19 @@ def testPhysEnvironmentClass():
 
     assert(environment.getScreenXY(position) == (100, 100))
 
-    screenPos = Vector(150, 175)
-    assert(environment.getVect(screenPos) == (1.5, .75))
+    assert(environment.getVect(150, 175) == Vector(1.5, .75))
     print "...Passed!"
+
+def testTextToList():
+    print "Testing textToList...",
+    c = PyBridge()
+    text = "[(1, 3), (3, 0), (1, 3), (1, 4)]"
+    assert(c.textToTupleList(text) == eval(text))
+    text = "[1, 3, 2, 5, 6]"
+    assert(c.textToList(text) == eval(text))
+    print "...passed!"
+
 
 testVectorClass()
 testPhysEnvironmentClass()
+testTextToList()

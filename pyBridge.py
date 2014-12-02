@@ -25,7 +25,7 @@ class Button(object):
     #color. selectedColor is what color the button is when selected.
     #id is an identifier for the button. 
     def __init__(self, x, y, width, height, margin, text, color, selectColor, 
-                 identifier):
+                 identifier, textColor=None):
         (self.x0, self.y0) = (x + margin, y + margin)
         (self.x1, self.y1) = (self.x0+width-margin*2, self.y0+height-margin*2)
 
@@ -33,6 +33,14 @@ class Button(object):
 
         self.color = color
         self.selectedColor = selectColor
+        #initialize text color
+        if(textColor == None):
+            if(self.color in ["black", "blue"]):
+                self.textColor = "white"
+            else:
+                self.textColor = "black"
+        else:
+            self.textColor = textColor
         self.selected = False
 
         self.id = identifier
@@ -51,7 +59,8 @@ class Button(object):
         cx = (self.x0 + self.x1) / 2
         cy = (self.y0 + self.y1) / 2
 
-        canvas.create_text(cx, cy, text=self.text, font="Arial 15")
+        canvas.create_text(cx, cy, text=self.text, font="Arial 15", 
+                           fill=self.textColor)
 
 #this is a class that is a list of buttons where only one can be selected 
 #*args is a list of buttons
@@ -390,8 +399,9 @@ class PyBridge(EventBasedAnimationClass):
     def initPhysConstants(self):
         #constants for nodes/springs
         self.nodeMass = 10 #kg
-        self.forceIncrement = 100 #how much the mass increases on a click
+        self.weightIncrement = 100 #how much the mass increases on a click
         self.breakRatio = 0.05
+        self.weightUnits = "kg"
 
     #initialize variables used in the game
     def initGameVariables(self):
@@ -409,7 +419,7 @@ class PyBridge(EventBasedAnimationClass):
         self.buildEnviron = None
         self.isHelpShown = False
         #the total force applied to the movable bridge bed nodes
-        self.testForce = 0
+        self.testWeight = 0
 
         #path to the level file
         self.levelPath = None
@@ -425,8 +435,8 @@ class PyBridge(EventBasedAnimationClass):
         self.fixedNodeColor = "brown"
         self.nodeColor = "black"
 
-        #how much self.testForce is increased each click
-        self.testForceIncrement = 250
+        #how much self.testWeight is increased each click
+        self.testWeightIncrement = 250
 
         #one is largest text, two is second largest, etc
         self.titleWeight = 1
@@ -543,7 +553,8 @@ class PyBridge(EventBasedAnimationClass):
 
             #change color to red if it is to long and the mode is build
             #aka it is a mode where length is limited
-            if(self.tempConstraint.getLength() > self.maxBeamLen and self.mode == "build"):
+            if(self.tempConstraint.getLength() > self.maxBeamLen and 
+               self.mode == "build"):
                 self.tempConstraint.color = "red"
             else:
                 self.tempConstraint.color = self.tempConstraint.baseColor
@@ -644,7 +655,8 @@ class PyBridge(EventBasedAnimationClass):
                 selection.color = self.fixedNodeColor
             else:
                 #otherwise, create a new fixed node
-                self.undoQue.append((Node(pos, self.nodeMass, self.environ, True, True, self.fixedNodeColor),))
+                self.undoQue.append((Node(pos, self.nodeMass, self.environ, 
+                                          True, True, self.fixedNodeColor),))
 
     #handles mouse pressed events in build mode
     def onBuildMousePressed(self, event):
@@ -734,39 +746,66 @@ class PyBridge(EventBasedAnimationClass):
         elif(self.terrainButtons.selectedId == "Node"):
             self.buildType = Node
 
-    #save the terrain in the make mode to a file
-    def saveTerrain(self):
+    #go through the current environment and get lists of terrain
+    #and start nodes so they can be saved
+    def getSavableNodeLists(self):
         terrainNodes = []
-        constraints = []
         startNodes = []
-        highScore = 0
+        #go through all objects and pick out nodes
         for obj in self.environ.objects:
             if(isinstance(obj, Node)):
                 terrainNodes.append(obj.position.getXY())
+                #if the node has been marked as a fixed node, save that
                 if(obj.color == self.fixedNodeColor):
                     nodeIndex = len(terrainNodes) - 1
                     startNodes.append(nodeIndex)
 
+        return (terrainNodes, startNodes)
+
+    #get a list of the current constraints in the environmnet in a 
+    #savable format
+    def getSavableConstraintList(self, nodeList):
+        constraints = []
         #go through constraints and find their nodes
         for index in self.environ.constraintIndexes:
             constraint = self.environ.objects[index]
+
             (node1, node2) = (constraint.nodes[0], constraint.nodes[1])
+
             node1Pos = node1.position.getXY() 
             node2Pos = node2.position.getXY()
+
             nodeIndexes = [-1, -1]
-            for i in xrange(len(terrainNodes)):
-                if(terrainNodes[i] == node1Pos):
+            #find node indexes in node list
+            for i in xrange(len(nodeList)):
+                if(nodeList[i] == node1Pos):
                     nodeIndexes[0] = i
-                elif(terrainNodes[i] == node2Pos):
+                elif(nodeList[i] == node2Pos):
                     nodeIndexes[1] = i
+
             constraints.append(tuple(nodeIndexes))
 
-        fileContents = str(terrainNodes) + "\n" + str(constraints) + "\n" + str(startNodes) + "\n" + str(highScore)
+        return constraints
+
+    #save the terrain in the make mode to a file
+    def saveTerrain(self):
+        highScore = 0 #high score starts off at zero
+        (terrainNodes, startNodes) = self.getSavableNodeLists()
+
+        constraints = self.getSavableConstraintList(terrainNodes)
+
+        fileContents = (str(terrainNodes) + "\n" + str(constraints) + "\n" + 
+                        str(startNodes) + "\n" + str(highScore))
 
         fileName = self.levelPrefix + self.levelName + ".txt"
         path = self.levelFolder + os.sep + fileName
         writeFile(path, fileContents)
         assert(os.path.exists(path))
+
+        #notify user that the file was saved
+        message = "Your level has been saved!"
+        title = "Level Saved"
+        tkMessageBox.showinfo(title, message)
 
     #handles mouse pressed events in make mode
     def onMakeMousePressed(self, event):
@@ -787,8 +826,8 @@ class PyBridge(EventBasedAnimationClass):
     #handles mouse pressed events in test mode
     def onTestMousePressed(self, event):
         if(not self.checkTestButtons(event) and not self.isGameOver):
-            self.testForce += self.testForceIncrement
-            self.score += 1
+            self.testWeight += self.testWeightIncrement
+            self.score += self.testWeightIncrement
 
     #handles all mouse pressed events
     def onMousePressed(self, event):
@@ -842,7 +881,7 @@ class PyBridge(EventBasedAnimationClass):
         if(self.environ.doesBridgeCover(self.width)):
             self.mode = "test"
             self.score = 0
-            self.testForce = 0
+            self.testWeight = 0
             self.buildEnviron = copy.deepcopy(self.environ)
             self.bedNodes = self.getBedNodeList()
             self.environ.start()
@@ -953,7 +992,6 @@ class PyBridge(EventBasedAnimationClass):
 
     #handle key press events when naming a level in make mode
     def onNamingKeyPress(self, event):
-        print event.keysym
         if(event.keysym == "BackSpace" and len(self.levelName) > 0):
             self.levelName = self.levelName[:-1]
         elif(event.keysym == "space"):
@@ -1022,7 +1060,7 @@ class PyBridge(EventBasedAnimationClass):
         if(self.mode in ["play", "start", "pick", "test"]):
             #add force to all bed Nodes if the game isn't over
             if(self.mode == "test" and not self.isGameOver):
-                nodeForce = -1*float(self.testForce)/len(self.bedNodes)
+                nodeForce = -1*float(self.testWeight)/len(self.bedNodes)
                 for node in self.bedNodes:
                     node.addForce(Vector(0, nodeForce))
 
@@ -1055,8 +1093,8 @@ class PyBridge(EventBasedAnimationClass):
     def drawScore(self):
         (x, y) = (self.width, 0)
         lineHeight = 30
-        scoreText = "Score: %d" % self.score
-        highScoreText = "HighScore: %d" % self.highScore
+        scoreText = "Score: %d %s" % (self.score, self.weightUnits)
+        highScoreText = "HighScore: %d %s" % (self.highScore, self.weightUnits)
 
         self.canvas.create_text(x, y, text=scoreText, font="Arial 15 bold",
                                 fill="black", anchor=NE)
@@ -1244,21 +1282,6 @@ class PyBridge(EventBasedAnimationClass):
         self.canvas.delete(ALL)
         if(self.debug): self.drawDebug()
         self.drawGame()
-
-def testTextToList():
-    print "Testing textToList...",
-    c = PhysModuleDemo()
-    text = "[(1, 3), (3, 0), (1, 3), (1, 4)]"
-    print c.textToList(text)
-    assert(c.textToList(text) == eval(text))
-    print "...passed!"
-
-def testInitLevelList():
-    print "Testing initLevelList...",
-    c = PhysModuleDemo()
-    c.initLevelList()
-    assert(c.levelList == [("levels\\level_1.txt", "1"), 
-                           ("levels\\level_terrain.txt", "terrain")])
 
 demo = PyBridge(1250, 750)
 demo.run()

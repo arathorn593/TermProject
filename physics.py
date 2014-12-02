@@ -3,11 +3,14 @@ import math
 def rgbString(red, green, blue):
         return "#%02x%02x%02x" % (red, green, blue)
 
+#2D vector class
 class Vector(object):
+    #for checking equality of floats
     @staticmethod
     def almostEqual(d1, d2, epsilon=10**-10):
         return (abs(d2 - d1) < epsilon)
     
+    #returns the zero Vector
     @staticmethod
     def zero():
         return Vector(0, 0)
@@ -77,19 +80,24 @@ class Vector(object):
         else:
             return NotImplemented
 
+    #get the length of the vector
     def getMag(self):
         return math.sqrt(self*self)
 
+    #return the projection of the vector onto u
     def projOnto(self, u):
         return ((self*u/float(u*u)) * u)
 
+    #get the XY coordinates of the vector
     def getXY(self):
         return (self.x, self.y)
 
-    #get the value of cosine of the angle b/w the vects
+    #get the value of the cosine of the angle b/w the vects
     def getCosTheta(self, other):
         return (self * other)/(self.getMag() * other.getMag())
 
+#this class keeps track of all aspects of the physics environment
+#objects, converting units, updating objects, collisions, etc. 
 class PhysEnvironment(object):
     #sets up the environment
     #gravity = gravity in m/s**2
@@ -114,6 +122,7 @@ class PhysEnvironment(object):
         self.resolveIterations = 5
         self.debug = False
 
+    #start the simulation (or restart it)
     def start(self):
         if(not self.hasStarted):
             #init all constraints for starting the animation
@@ -123,10 +132,11 @@ class PhysEnvironment(object):
         self.isSimulating = True
         self.hasStarted = True
 
+    #pause the simulation
     def pause(self):
         self.isSimulating = False
 
-    #returns the environment coordinates of a screen coordinate
+    #returns the environment coordinates (in vector form)of a screen coordinate
     def getVect(self, x, y):
         position = Vector(x, y)
         position = position - self.origin
@@ -139,9 +149,11 @@ class PhysEnvironment(object):
         #return a vector since most environment coordinates are vectors
         return position
 
+    #converts a single environment scalar (c) from meters to pixels
     def getScreenScalar(self, c):
         return c * self.screenConversion
 
+    #converts a single screen scalar(c) from pixels, to meters
     def getEnvironScalar(self, c):
         return c / float(self.screenConversion)
 
@@ -162,8 +174,12 @@ class PhysEnvironment(object):
 
     #add the given object to the environments list
     def add(self, obj):
+        #add to the list of objects
         self.objects.append(obj)
+        #get the objects index in the list
         index = len(self.objects) - 1
+
+        #add the index to specialized lists if needed
         if(isinstance(obj, Constraint)):
             self.constraintIndexes.append(index)
         elif(isinstance(obj, Weight)):
@@ -171,8 +187,10 @@ class PhysEnvironment(object):
         else:
             self.otherIndexes.append(index)
 
+        #return the index so the object can keep track of its position
         return index
 
+    #delete the object from the environment
     def deleteObj(self, obj, objIndex):
         #remove from the list by shifting everything else down
         for i in xrange(objIndex, len(self.objects) - 1):
@@ -195,13 +213,8 @@ class PhysEnvironment(object):
             else:
                 self.otherIndexes.append(i)
 
-    def resolveCollisions1(self):
-        #resolve collisions
-        for i in xrange(len(self.objects)):
-            if(isinstance(self.objects[i], Weight)):
-                self.objects[i].fixCollisions(self.objects[i+1:] + 
-                                              self.constraints)
-
+    #get a list of all edges of all (collidable) objects 
+    #edges in the form (xval, index, "R"/"L")
     def generateEdgeList(self):
         edgeList = []
 
@@ -211,7 +224,8 @@ class PhysEnvironment(object):
         edgeList.sort()
         return edgeList
 
-    #returns a list of the nodes left  of the screens edge
+    #returns a list of the nodes left  of the screens edge that are connected
+    #to a collidable constraint
     def getLeftCollidableNodes(self, leftScreenEdge):
         leftNodes = []
         for obj in self.objects:
@@ -226,73 +240,95 @@ class PhysEnvironment(object):
         return leftNodes
 
     #is there a path from the given constraint to the right side
-    def isCovered(self, node, width, seen=None, depth=0):
-        if(self.debug):
-            print "   " * depth + str(node.environIndex)
-            print "   "*depth + str(seen)
+    def isCovered(self, node, rightSide, seen=None, depth=0):
         if(seen == None):
             seen = set()
-        if(node.position.getXY()[0] >= width):
+
+        if(node.position.getXY()[0] >= rightSide):
+            #the node is past the right side.
             return True
         elif(node in seen):
+            #already been to this node. 
             return False
         else:
             seen.add(node)
+            #check all collidable constraints
             for constraint in node.constraints:
                 #get the other node in the constraint
                 if(constraint.nodes[0] is node):
                     newNode = constraint.nodes[1]
                 else:
                     newNode = constraint.nodes[0]
+                
                 if(constraint.isCollidable and 
-                   self.isCovered(newNode, width, seen, depth+1)):
+                   self.isCovered(newNode, rightSide, seen, depth+1)):
                     return True
+
             return False                    
 
-
+    #checks if the bridge covers the gap (checks if there is a path of
+    #collidable(bed or land beams) that spans the entire screen
     def doesBridgeCover(self, screenWidth):
-        #list of all collidable constraints with (leftX, rightX)
-        leftNodes = self.getLeftCollidableNodes(leftScreenEdge=0)
+        #find the left and right edges of the screen in meter units
+        leftEdge = self.getEnvironScalar(self.origin.getXY()[0])
 
-        environWidth = self.getEnvironScalar(screenWidth)
+        rightEdge = leftEdge + self.getEnvironScalar(screenWidth)
+
+        #list of all collidable constraints with (leftX, rightX)
+        leftNodes = self.getLeftCollidableNodes(leftEdge)
+
         for node in leftNodes:
-            if(self.isCovered(node, environWidth)):
+            if(self.isCovered(node, rightEdge)):
                 return True
         return False
 
     #I came up with an initial rough version of this algorith, but
     # my roomate helped me get it to this point
+    #resolves all collisions in the environment but only checks when two 
+    #objects are above one another in order to improve efficiency
     def resolveCollisions(self):
         #list of tuples in the form: (xVal, index, "R"/"L" (right or left))
         #note: xval is in environ coordinates
         edgeList = self.generateEdgeList()
 
         #the list of objects that could be colliding
+        #when adding an obj to this list the algorithm resolves all collisions
+        #with the objects in the list and the new object. That means that it 
+        #can assume none of the objects in the list are colliding
         objList = []
+
+        #go through all edges and only check collisions when 2+ objects
         for edge in edgeList:
             (x, i, side) = edge
+
             if(side == "L"):
+                #left side, add it to the list
                 newObj = self.objects[i]
+
+                #only need to check collisions if the list isn't empty
                 if(len(objList) > 0):
+                    #if the new obj is a weight, just pass it the list of obj
                     if(isinstance(newObj, Weight)):
                         newObj.fixCollisions(objList)
+                    #if it is not a weight, compare all weights in the objList
+                    #with it
                     else:
                         for i in xrange(len(objList)):
                             if(isinstance(objList[i], Weight)):
                                 objList[i].fixCollisions([newObj])
+                #add the object to the list after collisions resolved
                 objList.append(newObj)
-
+            #if it is the right side, just remove it
             elif(side == "R"):
                 for index in xrange(len(objList)):
                     if(objList[index].environIndex == i):
                         objList.pop(index)
                         break
 
-    #update each object in the list, assume each is a physObject
-    #returns true if a constraint broke, false otherwise
-    def update(self, dt, width, height):
-        if(self.isSimulating):
-            for iteration in xrange(self.resolveIterations):
+    #resolve all collisisons and constraints in the system
+    def resolveCollisionsConstraints(self):
+        #resolve multiple times each loop to approx best resolution
+        for iteration in xrange(self.resolveIterations):
                 #fixedCollisions = True
 
                 self.resolveCollisions()
@@ -300,6 +336,12 @@ class PhysEnvironment(object):
                 #resolve constraints
                 for index in self.constraintIndexes:
                     self.objects[index].resolve()
+
+    #update each object in the list, assume each is a physObject
+    #returns true if a constraint broke, false otherwise
+    def update(self, dt, width, height):
+        if(self.isSimulating):
+            self.resolveCollisionsConstraints()
 
             objToDelete = []
             #once constraints and collisions handled, update objects
@@ -322,9 +364,9 @@ class PhysEnvironment(object):
                 if(isBroken and isinstance(self.objects[index], BridgeBed)):
                     return True
 
+            #no objects broken
             return False
-        
-
+    
     #draw all the objects in the simulation
     def draw(self, canvas, debug=False):
         #draw objects so constraints are in front but behind nodes
@@ -348,8 +390,7 @@ class PhysEnvironment(object):
             if(self.objects[index].isClicked(screenX, screenY)):
                 return self.objects[index]
 
-
-
+#the base class for all objects that respond to basic physics
 class PhysObject(object):
     #creates a physics object
     #position: vector pointing to the objects coordinates in the environment
@@ -425,6 +466,8 @@ class PhysObject(object):
     def fixCollisions(self, objList):
         return False
 
+    #return edges in the form (xval, index, "R"/"L")
+    #by default, don't return anything since it is not collidable
     def getEdges(self):
         return []
 
@@ -457,6 +500,7 @@ class Node(PhysObject):
     def __hash__(self):
         return hash(str(self.position.getXY()) + self.color)
 
+    #update particle only if it is not fixed        
     def update(self, dt, width, height):
         if(not self.isFixed):
             super(Node, self).update(dt, width, height)
@@ -468,6 +512,8 @@ class Node(PhysObject):
         self.constraintIndexes.append(nodeIndex)
         return constraintIndex
 
+    #remove a constraint from the node's constraint list
+    #(and update all other constraints of their changed indexes)
     def removeConstraint(self, constraintIndex, nodeIndex):
         #remove the constraint from the list by shifting everything else down
         for i in xrange(constraintIndex, len(self.constraints) - 1):
@@ -478,6 +524,7 @@ class Node(PhysObject):
         #get rid of the tail element (that is a duplicate)
         del self.constraints[-1]
 
+    #delete the node (and all of the connected constraints)
     def delete(self):
         #delete all constraints
         i = 0
@@ -488,14 +535,18 @@ class Node(PhysObject):
 
         super(Node, self).delete() 
 
+    #draw the node (if visisble)
     def draw(self, canvas, debug=False):
         r = self.r
         (x, y) = self.environ.getScreenXY(self.position)
+
         if(self.visible):
             canvas.create_oval(x-r, y-r, x+r, y+r, fill=self.color)
+        #optional debug info
         if(debug):
             canvas.create_text(x, y, text=len(self.constraints), fill="white")
 
+    #returns true if the node was clicked, false otherwise
     def isClicked(self, clickX, clickY):
         #only visible nodes can be clicked
         if(self.visible):
@@ -506,7 +557,6 @@ class Node(PhysObject):
             return (xDist**2 + yDist**2) <= self.r**2
         else:
             return False
-
 
 #weights that will drop onto the bridge
 class Weight(PhysObject):
@@ -519,98 +569,98 @@ class Weight(PhysObject):
 
         super(Weight, self).__init__(*args)
 
+    #fix collisions between two weights
+    def fixWeightWeightCollision(self, otherWeight):
+        #vector from this object to the other object's center
+        centerVect = otherWeight.position - self.position
+        #distance b/w centers
+        dist = centerVect.getMag()
+
+        #minimum distance that the centers can be without colliding
+        minDist = (self.environ.getEnvironScalar(otherWeight.r) + 
+                   self.environ.getEnvironScalar(self.r))
+        #if they are two close, fix the collision
+        if(dist < minDist):
+            #move the two weights so they are not overlapping
+            displacement = dist - (minDist)
+            scaleFactor = displacement / dist
+
+            self.position += centerVect*(1/2.0)*scaleFactor
+            otherWeight.position -= centerVect*(1/2.0)*scaleFactor
+
+    #checks if the weight is above the constraint
+    #aka, can the weight collide with the node
+    def isWeightAboveConstraint(self, constraint):
+        #vector from the 0th node to the wieght
+        nodeWeightVect = self.position - constraint.nodes[0].position
+        otherNodeWeightVect = self.position - constraint.nodes[1].position
+        #get updated dist b/w nodes
+        constraintVect = (constraint.nodes[1].position - 
+                          constraint.nodes[0].position)
+        reverseConstVect = (constraint.nodes[0].position -
+                            constraint.nodes[1].position)
+
+        #the value of cosine of the angle b/w the vects
+        cosTheta0 = nodeWeightVect.getCosTheta(constraintVect)
+        cosTheta1 = otherNodeWeightVect.getCosTheta(reverseConstVect)
+
+        return cosTheta0 > 0 and cosTheta1 > 0
+
+    #returns the vector perpendicular to the constraint, pointing toward
+    #the weight
+    def getWeightConstraintPerpVect(self, constraint):
+        #vector from 0th node to weight
+        nodeWeightVect = self.position - constraint.nodes[0].position
+        #vector from 0th node to 1th node
+        constraintVect = (constraint.nodes[1].position - 
+                          constraint.nodes[0].position)
+        #project the vector to the weight down onto the constraint
+        projection = nodeWeightVect.projOnto(constraintVect)
+
+        #vector perpendicular to constraint to center of ball
+        perpVect = projection - nodeWeightVect
+
+        return perpVect
+
+    #Fix collision between a weight and a constraint
+    def fixWeightConstraintCollision(self, constraint):
+        #minimum distance that the weight and constraint can be before 
+        #colliding
+        minDist = (self.environ.getEnvironScalar(self.r) +
+                   self.environ.getEnvironScalar(constraint.width/2))
+
+        #if the weight is over the constaint
+        if(self.isWeightAboveConstraint(constraint)):
+            perpVect = self.getWeightConstraintPerpVect(constraint)
+            dist = perpVect.getMag()
+
+            if(dist < minDist):
+                displacement = dist - minDist
+                scaleFactor = displacement / dist
+
+                #weight ratio
+                wr = self.collisionRatio
+                #constraint ratio
+                cr = 1-self.collisionRatio
+
+                #adjust the position of the weight
+                self.position += perpVect*wr*scaleFactor
+                #adjust the position of the constraint
+                if(not constraint.nodes[0].isFixed):
+                    constraint.nodes[0].position -= perpVect*cr*scaleFactor
+                if(not constraint.nodes[1].isFixed):
+                    constraint.nodes[1].position -= perpVect*cr*scaleFactor
+
     #collision resolution algorithm adapted from:
     #http://www.gotoandplay.it/_articles/2005/08/advCharPhysics.php
     def fixCollisions(self, objList):
-        returnVal = False
-        debug = self.environ.debug
-        if(debug):
-            print "objList in collision func: [",
-            for obj in objList:
-                print obj.environIndex,
-            print "]"
         for obj in objList:
-            if(debug): print "testing index %d" % obj.environIndex
             if(isinstance(obj, Weight)):
-                if(debug): print "object is a weight"
-                #vector from this object to the other object's center
-                centerVect = obj.position - self.position
-                dist = centerVect.getMag()
-
-                minDist = (self.environ.getEnvironScalar(obj.r) + 
-                           self.environ.getEnvironScalar(self.r))
-                if(dist < minDist):
-                    #move the two weights so they are not overlapping
-                    displacement = dist - (minDist)
-                    scaleFactor = displacement / dist
-
-                    self.position += centerVect*0.5*scaleFactor
-                    obj.position -= centerVect*0.5*scaleFactor
-                    returnVal = True
-
+                self.fixWeightWeightCollision(obj)
             elif(isinstance(obj, Constraint) and obj.isCollidable):
-                if(debug): print "object is a collidable constraint"
-                minDist = (self.environ.getEnvironScalar(self.r) +
-                           self.environ.getEnvironScalar(obj.width/2))
-    
-                #vector from the 0th node to the wieght
-                nodeWeightVect = self.position - obj.nodes[0].position
-                otherNodeWeightVect = self.position - obj.nodes[1].position
-                #get updated dist b/w nodes
-                constraintVect = (obj.nodes[1].position - 
-                                  obj.nodes[0].position)
-                reverseConstVect = (obj.nodes[0].position -
-                                    obj.nodes[1].position)
+                self.fixWeightConstraintCollision(obj)
 
-                #the value of cosine of the angle b/w the vects
-                cosTheta0 = nodeWeightVect.getCosTheta(constraintVect)
-                cosTheta1 = otherNodeWeightVect.getCosTheta(reverseConstVect)
-
-                #if the weight is over the constaint
-                if(cosTheta0 > 0 and cosTheta1 > 0):
-                    projection = nodeWeightVect.projOnto(constraintVect)
-                    projLen = projection.getMag()
-                    constraintLen = constraintVect.getMag() 
-                    #vector perpendicular to constraint to center of ball
-                    perpVect = projection - nodeWeightVect
-                    dist = perpVect.getMag()
-
-
-                    if(dist < minDist):
-                        displacement = dist - minDist
-                        scaleFactor = displacement / dist
-
-                        #weight ratio
-                        wr = self.collisionRatio
-                        #constraint ratio
-                        cr = 1-self.collisionRatio
-                        self.position += perpVect*wr*scaleFactor
-                        #obj.nodes[0].addForce(self.mass * Vector(0, -1))
-                        #obj.nodes[1].addForce(self.mass * Vector(0, -1))
-                        if(not obj.nodes[0].isFixed):
-                            obj.nodes[0].position -= perpVect*cr*scaleFactor
-                        if(not obj.nodes[1].isFixed):
-                            obj.nodes[1].position -= perpVect*cr*scaleFactor
-                        returnVal = True
-            #if there was a collision, add friction
-            '''
-            if(returnVal):
-                penetration = minDist - dist
-                frictionScale = 1-self.frictionCoef
-                v = self.position - self.oldPosition
-                #change in velocity
-                dv = v.getMag() - penetration*frictionScale
-                dv = dv if dv < v.getMag() else v.getMag()
-
-                #move oldPos along velocity vector by dv
-                ratio = v.getMag()/dv
-                v *= ratio
-                self.oldPosition += v
-                '''
-
-        #no collisions occured
-        return returnVal
-
+    #update the object. return true if it is still in the screen, else false
     def update(self, dt, width, height):
         #first, update as usual
         super(Weight, self).update(dt, width, height)
@@ -622,6 +672,7 @@ class Weight(PhysObject):
         if(y - r > height or y + r < 0 or x - r > width or x + r < 0):
             self.inScreen = False
 
+    #draw the weight
     def draw(self, canvas, debug=False):
         r = self.r
         (cx, cy) = self.environ.getScreenXY(self.position)
@@ -630,14 +681,13 @@ class Weight(PhysObject):
         if(debug):
             canvas.create_text(cx, cy, text=self.environIndex)
 
+    #get the right and left edges of the weight (xval, index, "R"/"L")
     def getEdges(self):
         (x, y) = self.position.getXY()
         r = self.environ.getEnvironScalar(self.r)
         leftEdge = (x-r, self.environIndex, "L")
         rightEdge = (x+r, self.environIndex, "R")
         return [leftEdge, rightEdge]
-
-
 
 #does not extend phys object class because it does not act like a physObject
 class Constraint(object):
@@ -652,16 +702,21 @@ class Constraint(object):
 
         self.nodes = [node1, node2]
 
+        #the index of the constraint in both nodes constraint list
         self.nodeIndexes=[self.nodes[i].addConstraint(self, i) 
                           for i in xrange(len(self.nodes))]
 
+        #what fraction of the length the constraint can change before breaking
         self.breakRatio = breakRatio
+        #the initial length of the constraint
         self.restLen = (self.nodes[0].position-self.nodes[1].position).getMag()
 
         #drawing constants
         self.width = 5
         self.baseColor = baseColor
         self.color = self.baseColor
+
+        #update basic info
         self.updateInfo()
 
     #initialize for simulation
@@ -674,6 +729,7 @@ class Constraint(object):
     def updateColor(self):
         pass
 
+    #update all variables important for breaking/resolving constraint
     def updateInfo(self):
         node1Pos = self.nodes[0].position
         node2Pos = self.nodes[1].position
@@ -687,6 +743,7 @@ class Constraint(object):
 
         self.lenRatio = self.displacement/self.curLen
 
+    #break the constraint by making new nodes which are not fixed
     def breakConstraint(self):
         #create new nodes on the ends of the constraint so that it 
         #is freed. only create new constraints if there are other constraints
@@ -718,6 +775,7 @@ class Constraint(object):
         if(not self.nodes[1].isFixed):
             self.nodes[1].position -= self.nodeVect*0.5*self.lenRatio
 
+    #check if the constraint should be broken
     def checkForBreak(self):
         self.updateInfo()
         if(abs(self.lenRatio) > self.breakRatio):
@@ -726,6 +784,7 @@ class Constraint(object):
         else:
             return False
 
+    #delete the constraint (and update both nodes)
     def delete(self):
         #remove constraint from nodes
         for i in xrange(len(self.nodes)):
@@ -744,10 +803,13 @@ class Constraint(object):
         #node coordinates
         (x1, y1) = self.environ.getScreenXY(self.nodes[0].position)
         (x2, y2) = self.environ.getScreenXY(self.nodes[1].position)
+
         canvas.create_line(x1, y1, x2, y2, fill=self.color, width=self.width)
+
         if(debug):
             canvas.create_text((x1+x2)/2, (y1+y2)/2, text=self.environIndex)
 
+    #get edges in the form (xval, index, "R"/"L")
     def getEdges(self):
         i = self.environIndex
 
@@ -755,23 +817,27 @@ class Constraint(object):
 
         return [(xLeft, i, "L"), (xRight, i, "R")]
 
+    #get the xvalues of the edges of the constraint, sorted
     def getSortedXVals(self):
         xVals = [self.nodes[0].position.getXY()[0], 
                  self.nodes[1].position.getXY()[0]]
         xVals.sort()
-        return tuple(xVals)
+        return tuple(xVals)  
 
+    def isClicked(self, xClick, yClick):
+        return False
 
-    def isClicked(self, screenX, screenY):
-        return False    
-
+#a non-collidable constraint for bridges
 class BridgeBeam(Constraint):
     def __init__(self, *args):
         self.colorVals = (180, 180, 180)
         super(BridgeBeam, self).__init__(*args, collidable=False, 
                                          baseColor=rgbString(*self.colorVals))
-    
+
+    #update the color of the constraint based on tension/compression
     def updateColor(self):
+        increaseScale = 75
+        decreaseScale = 180
         #base color values
         (red, green, blue) = self.colorVals
 
@@ -783,8 +849,8 @@ class BridgeBeam(Constraint):
         elif(displaceRatio < -1):
             displaceRatio = -1
 
-        increaseChange = abs(displaceRatio) * 75
-        decreaseChange = abs(displaceRatio) * 180
+        increaseChange = abs(displaceRatio) * increaseScale
+        decreaseChange = abs(displaceRatio) * decreaseScale
 
         if(displaceRatio < 0):
             blue += increaseChange
@@ -797,14 +863,18 @@ class BridgeBeam(Constraint):
 
         self.color = rgbString(red, green, blue)
         
-            
+#a collicable constraint for bridges     
 class BridgeBed(Constraint):
     def __init__(self, *args):
+        #base color values (R, G, B)
         self.colorVals = (100, 100, 100)
         super(BridgeBed, self).__init__(*args, collidable=True, 
                                         baseColor=rgbString(*self.colorVals))
 
+    #update the color based on 
     def updateColor(self):
+        increaseScale = 155
+        decreaseScale = 100
         #base color values
         (red, green, blue) = self.colorVals
 
@@ -816,8 +886,8 @@ class BridgeBed(Constraint):
         elif(displaceRatio < -1):
             displaceRatio = -1
 
-        increaseChange = abs(displaceRatio) * 155
-        decreaseChange = abs(displaceRatio) * 100
+        increaseChange = abs(displaceRatio) * increaseScale
+        decreaseChange = abs(displaceRatio) * decreaseScale
 
         if(displaceRatio < 0):
             blue += increaseChange
@@ -830,6 +900,7 @@ class BridgeBed(Constraint):
 
         self.color = rgbString(red, green, blue)
 
+# a colidable constraint used for the terrain of the level
 class LandBeam(Constraint):
     def __init__(self, *args):
         super(LandBeam, self).__init__(*args, collidable=True,
